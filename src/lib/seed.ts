@@ -1,0 +1,383 @@
+import { nanoid } from "nanoid";
+import { migrateStore } from "./migrate";
+import { richDoc } from "./tiptap-text";
+import type { DocumentRecord, StoreData } from "./types";
+
+export function createSeedStore(): StoreData {
+  const orgId = "org_demo";
+  const spaceId = "spc_product";
+  const apiSpaceId = "spc_api";
+  const now = new Date().toISOString();
+
+  const welcomeId = "doc_welcome";
+  const gettingStartedId = "doc_getting_started";
+  const conceptsId = "doc_concepts";
+  const spacesDocId = "doc_spaces";
+  const editorDocId = "doc_editor";
+  const publishDocId = "doc_publish";
+  const apiCatId = "doc_api_cat";
+  const authDocId = "doc_auth";
+
+  const documents: DocumentRecord[] = [
+    {
+      id: welcomeId,
+      spaceId,
+      parentId: null,
+      title: "Welcome",
+      slug: "welcome",
+      kind: "page",
+      href: null,
+      position: 0,
+      hidden: false,
+      tags: ["intro"],
+      locale: "en",
+      translationOf: null,
+      sourcePath: null,
+      markdownFormat: null,
+      seoTitle: "Welcome to Documentalist",
+      seoDescription: "Archbee-inspired knowledge portals you run locally.",
+      createdAt: now,
+      updatedAt: now,
+      content: richDoc([
+        { type: "heading", level: 1, text: "Welcome to Documentalist" },
+        {
+          type: "paragraph",
+          text: "Documentalist is a local knowledge-portal platform modeled on how Archbee organizes product documentation: Spaces, nested documents, a slash-command block editor, and a publishable reader site.",
+        },
+        { type: "heading", level: 2, text: "What you can do here" },
+        {
+          type: "bullet",
+          items: [
+            "Create Spaces for products, APIs, or internal guides",
+            "Nest pages and categories in the sidebar tree",
+            "Write with / blocks, callouts, preview, and autosave",
+            "Comment, tag, set SEO, hide pages from the portal",
+            "Import Markdown, use templates, publish to /p/{slug}",
+            "Reuse {{variables}} and snippets across docs",
+          ],
+        },
+        {
+          type: "callout",
+          variant: "info",
+          text: "Type / in the editor for the block menu. Drag docs in the sidebar to reorder.",
+        },
+      ]),
+    },
+    {
+      id: gettingStartedId,
+      spaceId,
+      parentId: null,
+      title: "Getting started",
+      slug: "getting-started",
+      kind: "category",
+      href: null,
+      position: 1,
+      hidden: false,
+      tags: [],
+      locale: "en",
+      translationOf: null,
+      sourcePath: null,
+      markdownFormat: null,
+      seoTitle: null,
+      seoDescription: null,
+      createdAt: now,
+      updatedAt: now,
+      content: richDoc([
+        { type: "heading", level: 1, text: "Getting started" },
+        {
+          type: "paragraph",
+          text: "Categories group related pages in the sidebar. Convert any document to a category from the document menu.",
+        },
+      ]),
+    },
+    {
+      id: conceptsId,
+      spaceId,
+      parentId: gettingStartedId,
+      title: "Core concepts",
+      slug: "core-concepts",
+      kind: "page",
+      href: null,
+      position: 0,
+      hidden: false,
+      tags: ["concepts"],
+      locale: "en",
+      translationOf: null,
+      sourcePath: null,
+      markdownFormat: null,
+      seoTitle: null,
+      seoDescription: null,
+      createdAt: now,
+      updatedAt: now,
+      content: richDoc([
+        { type: "heading", level: 1, text: "Core concepts" },
+        { type: "heading", level: 2, text: "Organization" },
+        {
+          type: "paragraph",
+          text: "The tenant that owns Spaces, variables, snippets, and templates.",
+        },
+        { type: "heading", level: 2, text: "Space" },
+        {
+          type: "paragraph",
+          text: "A documentation collection. Private by default. Publishing freezes a snapshot and exposes /p/{{product_slug}}.",
+        },
+        { type: "heading", level: 2, text: "Document" },
+        {
+          type: "paragraph",
+          text: "A page, category, or external link in a nestable tree. Edits autosave; revisions keep recent snapshots.",
+        },
+      ]),
+    },
+    {
+      id: spacesDocId,
+      spaceId,
+      parentId: gettingStartedId,
+      title: "Spaces & tree",
+      slug: "spaces-and-tree",
+      kind: "page",
+      href: null,
+      position: 1,
+      hidden: false,
+      tags: ["ia"],
+      locale: "en",
+      translationOf: null,
+      sourcePath: null,
+      markdownFormat: null,
+      seoTitle: null,
+      seoDescription: null,
+      createdAt: now,
+      updatedAt: now,
+      content: richDoc([
+        { type: "heading", level: 1, text: "Spaces & document tree" },
+        {
+          type: "paragraph",
+          text: "Use the left sidebar to switch Spaces, create documents, nest pages, and drag to reorder — the same IA Archbee documents in How to get started.",
+        },
+        {
+          type: "code",
+          text: "Organization\n  └── Space (product-docs)\n        ├── Welcome (page)\n        └── Getting started (category)\n              ├── Core concepts\n              └── Spaces & tree",
+        },
+      ]),
+    },
+    {
+      id: editorDocId,
+      spaceId,
+      parentId: null,
+      title: "Editor",
+      slug: "editor",
+      kind: "page",
+      href: null,
+      position: 2,
+      hidden: false,
+      tags: ["editor"],
+      locale: "en",
+      translationOf: null,
+      sourcePath: null,
+      markdownFormat: null,
+      seoTitle: null,
+      seoDescription: null,
+      createdAt: now,
+      updatedAt: now,
+      content: richDoc([
+        { type: "heading", level: 1, text: "Block editor" },
+        {
+          type: "paragraph",
+          text: "Type / to open the slash menu. Insert headings, lists, code, quotes, dividers, and callouts. Toggle Preview to see variable substitution. Content autosaves about every second.",
+        },
+        {
+          type: "paragraph",
+          text: "Product name for demos: {{product_name}}. Support email: {{support_email}}.",
+        },
+      ]),
+    },
+    {
+      id: publishDocId,
+      spaceId,
+      parentId: null,
+      title: "Publishing",
+      slug: "publishing",
+      kind: "page",
+      href: null,
+      position: 3,
+      hidden: false,
+      tags: ["publish"],
+      locale: "en",
+      translationOf: null,
+      sourcePath: null,
+      markdownFormat: null,
+      seoTitle: null,
+      seoDescription: null,
+      createdAt: now,
+      updatedAt: now,
+      content: richDoc([
+        { type: "heading", level: 1, text: "Publish a Space" },
+        {
+          type: "paragraph",
+          text: "Click Publish in the space header. Documentalist freezes the current tree into a published snapshot and serves it at /p/{slug}. Unpublished edits show a dirty badge until you publish again. Optional portal password lives in Space settings.",
+        },
+      ]),
+    },
+    {
+      id: apiCatId,
+      spaceId: apiSpaceId,
+      parentId: null,
+      title: "API reference",
+      slug: "api-reference",
+      kind: "category",
+      href: null,
+      position: 0,
+      hidden: false,
+      tags: [],
+      locale: "en",
+      translationOf: null,
+      sourcePath: null,
+      markdownFormat: null,
+      seoTitle: null,
+      seoDescription: null,
+      createdAt: now,
+      updatedAt: now,
+      content: richDoc([
+        { type: "heading", level: 1, text: "API reference" },
+        {
+          type: "paragraph",
+          text: "Second Space showing multi-product navigation — Archbee’s Space Links idea, simplified to separate portals.",
+        },
+      ]),
+    },
+    {
+      id: authDocId,
+      spaceId: apiSpaceId,
+      parentId: apiCatId,
+      title: "Authentication",
+      slug: "authentication",
+      kind: "page",
+      href: null,
+      position: 0,
+      hidden: false,
+      tags: ["api"],
+      locale: "en",
+      translationOf: null,
+      sourcePath: null,
+      markdownFormat: null,
+      seoTitle: null,
+      seoDescription: null,
+      createdAt: now,
+      updatedAt: now,
+      content: richDoc([
+        { type: "heading", level: 1, text: "Authentication" },
+        {
+          type: "paragraph",
+          text: "Send an API key in the Authorization header.",
+        },
+        {
+          type: "code",
+          text: 'curl -H "Authorization: Bearer YOUR_KEY" \\\n  https://api.example.com/v1/spaces',
+        },
+      ]),
+    },
+  ];
+
+  const seed: StoreData = {
+    organization: {
+      id: orgId,
+      name: "Acme Docs",
+      llm: {
+        enabled: false,
+        provider: "compatible",
+        apiKey: "",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o-mini",
+      },
+    },
+    spaces: [
+      {
+        id: spaceId,
+        orgId,
+        name: "Product docs",
+        slug: "product-docs",
+        description: "Guides and concepts for Documentalist",
+        isPublic: true,
+        accentColor: "#0F6E56",
+        accessPassword: null,
+        customCss: "",
+        versionGroupId: "vg_product",
+        versionLabel: "current",
+        isMainVersion: true,
+        defaultLocale: "en",
+        locales: ["en", "fr"],
+        publishedAt: now,
+        publishedSnapshot: {
+          publishedAt: now,
+          documents: documents.filter((d) => d.spaceId === spaceId),
+        },
+        llm: null,
+      },
+      {
+        id: apiSpaceId,
+        orgId,
+        name: "API docs",
+        slug: "api-docs",
+        description: "HTTP API reference",
+        isPublic: true,
+        accentColor: "#185FA5",
+        accessPassword: null,
+        customCss: "",
+        versionGroupId: "vg_api",
+        versionLabel: "current",
+        isMainVersion: true,
+        defaultLocale: "en",
+        locales: ["en", "fr"],
+        publishedAt: now,
+        publishedSnapshot: {
+          publishedAt: now,
+          documents: documents.filter((d) => d.spaceId === apiSpaceId),
+        },
+        llm: null,
+      },
+    ],
+    documents,
+    revisions: [],
+    comments: [
+      {
+        id: `cmt_${nanoid(8)}`,
+        documentId: welcomeId,
+        author: "Alex",
+        body: "Add a short GIF of the slash menu here.",
+        resolved: false,
+        createdAt: now,
+      },
+    ],
+    variables: [
+      {
+        id: nanoid(10),
+        orgId,
+        key: "product_name",
+        value: "Documentalist",
+      },
+      {
+        id: nanoid(10),
+        orgId,
+        key: "product_slug",
+        value: "product-docs",
+      },
+      {
+        id: nanoid(10),
+        orgId,
+        key: "support_email",
+        value: "docs@acme.example",
+      },
+    ],
+    snippets: [
+      {
+        id: nanoid(10),
+        orgId,
+        name: "Need help callout",
+        body: "Need help? Email {{support_email}} or open a ticket in the portal.",
+      },
+    ],
+    templates: [],
+    integrations: [],
+  };
+
+  return migrateStore(seed);
+}
