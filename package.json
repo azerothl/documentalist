@@ -33,6 +33,7 @@
     "@tiptap/suggestion": "^3.32.2",
     "better-sqlite3": "^12.11.1",
     "date-fns": "^4.4.0",
+    "fflate": "^0.8.3",
     "ipaddr.js": "^2.5.0",
     "lowlight": "^3.3.0",
     "nanoid": "^6.0.2",
