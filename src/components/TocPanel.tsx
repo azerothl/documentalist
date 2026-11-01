@@ -13,30 +13,31 @@ export function TocPanel({ content, tags = [] }: Props) {
 
   return (
     <aside className="flex h-full flex-col border-l border-[var(--line)] bg-[var(--surface)]">
-      <div className="flex border-b border-[var(--line)] text-[12px] font-medium">
-        <span className="border-b-2 border-[var(--accent)] px-3 py-2.5 text-[var(--ink)]">
-          Contents
-        </span>
-        <span className="px-3 py-2.5 text-[var(--ink-faint)]">Comments</span>
-        <span className="px-3 py-2.5 text-[var(--ink-faint)]">Code</span>
-      </div>
+      <p className="border-b border-[var(--line)] px-3 py-3 text-sm font-medium">
+        Sommaire
+      </p>
       <div className="flex-1 overflow-auto p-3">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
-          On this page
+          Sur cette page
         </p>
         {headings.length === 0 ? (
           <p className="text-[13px] text-[var(--ink-faint)]">
-            Headings appear here as you write.
+            Aucun titre de section.
           </p>
         ) : (
           <ul className="flex flex-col gap-1">
-            {headings.map((h) => (
+            {headings.map((h, index) => (
               <li
                 key={h.id}
                 className="text-[13px] text-[var(--ink-muted)]"
                 style={{ paddingLeft: (h.level - 1) * 10 }}
               >
-                {h.text}
+                <a
+                  href={`#section-${index}`}
+                  className="hover:text-[var(--accent)]"
+                >
+                  {h.text}
+                </a>
               </li>
             ))}
           </ul>

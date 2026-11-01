@@ -166,7 +166,9 @@ export function DocEditor({
   onChange,
 }: Props) {
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
   const slashRef = useRef<SlashState | null>(null);
   const applyingExternal = useRef(false);
   const lastEmitted = useRef(JSON.stringify(content));
@@ -285,6 +287,8 @@ export function DocEditor({
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(editable);
+    // Synchronize the menu with TipTap's external editability state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!editable) setSlash(null);
   }, [editor, editable]);
 
@@ -301,6 +305,8 @@ export function DocEditor({
     editor.commands.setContent(content, { emitUpdate: false });
     lastEmitted.current = next;
     applyingExternal.current = false;
+    // A server restore or document switch invalidates the current slash range.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSlash(null);
   }, [documentId, content, editor]);
 
@@ -320,6 +326,7 @@ export function DocEditor({
         <EditorContent editor={editor} />
       </div>
       <SlashMenu
+        key={`${documentId}:${slash?.query}:${Boolean(slash)}`}
         open={Boolean(slash)}
         query={slash?.query ?? ""}
         items={items}

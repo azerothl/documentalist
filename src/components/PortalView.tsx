@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DocEditor } from "@/components/DocEditor";
+import { DocumentContent } from "@/components/DocumentContent";
 import { DocTree } from "@/components/DocTree";
 import { TocPanel } from "@/components/TocPanel";
-import { buildTree, findByPath, firstReadablePage, pathSlugs } from "@/lib/tree";
+import {
+  buildTree,
+  findByPath,
+  firstReadablePage,
+  pathSlugs,
+} from "@/lib/tree";
 import { applyVariables, extractText } from "@/lib/tiptap-text";
 import type {
   DocumentRecord,
@@ -17,8 +22,8 @@ import type {
 } from "@/lib/types";
 
 type Props = {
-  space: Space;
-  versionSpaces: Space[];
+  space: Pick<Space, "id" | "name" | "slug" | "accentColor" | "locales">;
+  versionSpaces: Pick<Space, "id" | "slug" | "versionLabel">[];
   documents: DocumentRecord[];
   variables: Variable[];
   path: string[];
@@ -32,7 +37,10 @@ function mapNode(node: TipTapNode, vars: Record<string, string>): TipTapNode {
   return next;
 }
 
-function substituteDoc(doc: TipTapDoc, vars: Record<string, string>): TipTapDoc {
+function substituteDoc(
+  doc: TipTapDoc,
+  vars: Record<string, string>,
+): TipTapDoc {
   return {
     type: "doc",
     content: (doc.content ?? []).map((n) => mapNode(n, vars)),
@@ -48,23 +56,8 @@ export function PortalView({
   locale,
 }: Props) {
   const router = useRouter();
-  const storageKey = `documentalist.portal.${space.slug}`;
-  const [unlocked, setUnlocked] = useState(!space.accessPassword);
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-
-  useEffect(() => {
-    if (!space.accessPassword) {
-      setUnlocked(true);
-      return;
-    }
-    try {
-      setUnlocked(sessionStorage.getItem(storageKey) === "1");
-    } catch {
-      setUnlocked(false);
-    }
-  }, [space.accessPassword, storageKey]);
+  const [navigationOpen, setNavigationOpen] = useState(false);
 
   const visible = documents.filter((d) => !d.hidden && d.locale === locale);
   const tree = useMemo(() => buildTree(visible), [visible]);
@@ -88,7 +81,8 @@ export function PortalView({
       .filter((d) => d.kind === "page")
       .filter((d) => {
         const tags = (d.tags ?? []).join(" ");
-        const hay = `${d.title}\n${tags}\n${extractText(d.content)}`.toLowerCase();
+        const hay =
+          `${d.title}\n${tags}\n${extractText(d.content)}`.toLowerCase();
         return hay.includes(q);
       })
       .slice(0, 12);
@@ -98,54 +92,6 @@ export function PortalView({
     const url = new URL(href, "http://local");
     url.searchParams.set("lang", next.locale ?? locale);
     return `${url.pathname}?${url.searchParams.toString()}`;
-  }
-
-  if (!unlocked) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-[var(--bg)] px-4">
-        <form
-          className="w-full max-w-sm rounded-lg border border-[var(--line)] bg-[var(--surface)] p-6"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (password === space.accessPassword) {
-              try {
-                sessionStorage.setItem(storageKey, "1");
-              } catch {
-                /* ignore */
-              }
-              setUnlocked(true);
-              setError("");
-            } else {
-              setError("Incorrect password");
-            }
-          }}
-        >
-          <h1 className="font-[family-name:var(--font-display)] text-2xl">
-            {space.name}
-          </h1>
-          <p className="mt-2 text-sm text-[var(--ink-muted)]">
-            This portal is password-protected.
-          </p>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-4 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-3 py-2"
-            placeholder="Password"
-            autoFocus
-          />
-          {error ? (
-            <p className="mt-2 text-sm text-[#A32D2D]">{error}</p>
-          ) : null}
-          <button
-            type="submit"
-            className="mt-4 w-full rounded-md bg-[var(--accent)] py-2 text-sm font-medium text-white"
-          >
-            Unlock
-          </button>
-        </form>
-      </div>
-    );
   }
 
   return (
@@ -158,11 +104,17 @@ export function PortalView({
         } as React.CSSProperties
       }
     >
-      {space.customCss ? (
-        <style dangerouslySetInnerHTML={{ __html: space.customCss }} />
-      ) : null}
-      <header className="flex h-14 items-center justify-between border-b border-[var(--line)] px-4 md:px-6">
-        <div className="flex items-center gap-3">
+      <header className="flex min-h-14 flex-wrap gap-3 py-3 items-center justify-between border-b border-[var(--line)] px-4 md:px-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="md:hidden"
+            aria-expanded={navigationOpen}
+            aria-controls="portal-navigation"
+            onClick={() => setNavigationOpen(!navigationOpen)}
+          >
+            Sommaire
+          </button>
           <Link
             href={withQuery(`/p/${space.slug}`, {})}
             className="font-[family-name:var(--font-display)] text-xl tracking-tight"
@@ -170,6 +122,7 @@ export function PortalView({
             {space.name}
           </Link>
           <select
+            aria-label="Version de la documentation"
             className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs"
             value={space.id}
             onChange={(e) => {
@@ -184,10 +137,13 @@ export function PortalView({
             ))}
           </select>
           <select
+            aria-label="Langue de la documentation"
             className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs"
             value={locale}
             onChange={(e) =>
-              router.push(withQuery(`/p/${space.slug}`, { locale: e.target.value }))
+              router.push(
+                withQuery(`/p/${space.slug}`, { locale: e.target.value }),
+              )
             }
           >
             {(space.locales ?? [locale]).map((l) => (
@@ -201,14 +157,15 @@ export function PortalView({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search docs…"
+            aria-label="Rechercher dans la documentation"
+            placeholder="Rechercher…"
             className="w-40 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-sm md:w-56"
           />
           <Link
             href="/app"
             className="text-xs text-[var(--ink-muted)] hover:text-[var(--ink)]"
           >
-            Edit in app
+            Espace de rédaction
           </Link>
         </div>
       </header>
@@ -221,10 +178,7 @@ export function PortalView({
               return (
                 <li key={doc.id}>
                   <Link
-                    href={withQuery(
-                      `/p/${space.slug}/${slugs.join("/")}`,
-                      {},
-                    )}
+                    href={withQuery(`/p/${space.slug}/${slugs.join("/")}`, {})}
                     className="text-sm text-[var(--accent)] hover:underline"
                     onClick={() => setQuery("")}
                   >
@@ -237,8 +191,16 @@ export function PortalView({
         </div>
       ) : null}
 
-      <div className="mx-auto flex w-full max-w-6xl flex-1">
-        <aside className="hidden w-60 shrink-0 border-r border-[var(--line)] p-4 md:block">
+      {query.trim() && searchResults.length === 0 ? (
+        <p role="status" className="px-6 py-3 text-sm">
+          Aucun résultat pour « {query} ».
+        </p>
+      ) : null}
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col md:flex-row">
+        <aside
+          id="portal-navigation"
+          className={`${navigationOpen ? "block" : "hidden"} w-full border-r border-[var(--line)] p-4 md:block md:w-60 md:shrink-0`}
+        >
           <DocTree
             nodes={tree}
             activeId={current?.id}
@@ -261,16 +223,12 @@ export function PortalView({
                   {applyVariables(current.seoDescription, varMap)}
                 </p>
               ) : null}
-              <DocEditor
-                documentId={current.id}
-                content={content}
-                editable={false}
-              />
+              <DocumentContent content={content} />
             </>
           ) : (
             <p className="text-[var(--ink-faint)]">
-              No pages for locale “{locale}”. Switch language or translate docs
-              in the workspace.
+              Aucune page dans la langue « {locale} ». Changez de langue ou
+              préparez une traduction dans l’espace de rédaction.
             </p>
           )}
         </article>

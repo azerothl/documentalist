@@ -12,6 +12,7 @@ type Props = {
   spaceId: string;
   onChange: (integrations: Integration[]) => void;
   onOpenGithubImport: () => void;
+  onImported: (spaceId: string) => void;
 };
 
 export function IntegrationsPanel({
@@ -19,6 +20,7 @@ export function IntegrationsPanel({
   spaceId,
   onChange,
   onOpenGithubImport,
+  onImported,
 }: Props) {
   const [provider, setProvider] = useState<IntegrationProvider>("github");
   const [busy, setBusy] = useState(false);
@@ -34,6 +36,7 @@ export function IntegrationsPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: integrations.find((i) => i.provider === provider)?.id,
           provider,
           name: catalog.title,
           enabled: true,
@@ -74,8 +77,42 @@ export function IntegrationsPanel({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
       setMessage(`${data.imported} pages OpenAPI importées`);
+      onImported(spaceId);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importExternal() {
+    const repository =
+      provider === "gitlab"
+        ? window.prompt("Projet GitLab (groupe/projet)")
+        : undefined;
+    if (provider === "gitlab" && !repository) return;
+    const branch =
+      provider === "gitlab" ? window.prompt("Branche", "main") : undefined;
+    const path =
+      provider === "gitlab"
+        ? window.prompt("Dossier de documentation", "docs")
+        : undefined;
+    if (branch === null || path === null) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/integrations/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, repository, branch, path }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMessage(
+        `${data.imported} pages importées${data.warnings?.length ? ` · Blocs non convertis : ${data.warnings.join(", ")}` : ""}`,
+      );
+      onImported(data.space.id);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Import impossible.");
     } finally {
       setBusy(false);
     }
@@ -112,7 +149,13 @@ export function IntegrationsPanel({
           {field.label}
           <input
             type={field.secret ? "password" : "text"}
-            value={form[field.key] ?? ""}
+            value={
+              form[field.key] ??
+              integrations.find((i) => i.provider === provider)?.config[
+                field.key
+              ] ??
+              ""
+            }
             placeholder={field.placeholder}
             className="rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
             onChange={(e) =>
@@ -122,6 +165,16 @@ export function IntegrationsPanel({
         </label>
       ))}
       <div className="flex flex-wrap gap-1">
+        {provider === "gitlab" || provider === "notion" ? (
+          <button
+            disabled={busy}
+            type="button"
+            className="rounded-md border border-[var(--line)] px-2.5 py-1 text-xs"
+            onClick={() => void importExternal()}
+          >
+            Importer les documents…
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={busy}

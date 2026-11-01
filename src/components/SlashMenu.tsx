@@ -32,10 +32,6 @@ export function SlashMenu({ open, query, items, anchor, onClose }: Props) {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    setIndex(0);
-  }, [query, open]);
-
-  useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -70,17 +66,26 @@ export function SlashMenu({ open, query, items, anchor, onClose }: Props) {
       className="fixed z-50 w-72 overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)]"
       style={{ top: anchor.top, left: anchor.left }}
       role="listbox"
+      aria-label="Blocs disponibles"
+      aria-activedescendant={
+        filtered[index] ? `slash-${filtered[index].id}` : undefined
+      }
     >
       <div className="border-b border-[var(--line)] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
         Blocs {query ? `· /${query}` : ""}
       </div>
       <ul className="max-h-64 overflow-auto py-1">
         {filtered.length === 0 ? (
-          <li className="px-3 py-2 text-sm text-[var(--ink-faint)]">Aucun résultat</li>
+          <li className="px-3 py-2 text-sm text-[var(--ink-faint)]">
+            Aucun résultat
+          </li>
         ) : (
           filtered.map((item, i) => (
             <li key={item.id}>
               <button
+                id={`slash-${item.id}`}
+                role="option"
+                aria-selected={i === index}
                 type="button"
                 className={[
                   "flex w-full flex-col px-3 py-2 text-left text-sm",
