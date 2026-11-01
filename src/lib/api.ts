@@ -66,6 +66,13 @@ function validateBody(path: string, method: string, body: unknown) {
           .optional(),
       })
       .parse(body);
+  if (method === "POST" && path === "/api/spaces/sync")
+    return z
+      .object({
+        spaceId: z.string().min(1),
+        force: z.boolean().optional(),
+      })
+      .parse(body);
   if (method === "PATCH" && /^\/api\/spaces\/[^/]+$/.test(path))
     return spacePatchSchema.parse(body);
   if (method === "PATCH" && /^\/api\/documents\/[^/]+$/.test(path))

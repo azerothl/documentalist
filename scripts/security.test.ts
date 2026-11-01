@@ -103,8 +103,14 @@ test("Sécurité, publication et persistance", async (t) => {
         assert.ok(!serialized.includes("Enfant secret"));
         assert.ok(!serialized.includes("Secret parent"));
         assert.ok(!serialized.includes("SECRET_VARIABLE"));
-        assert.ok(!serialized.includes("apiKey"));
-        assert.ok(!serialized.includes("accessPassword"));
+        // The product guide may document field names; actual secret fields and
+        // values must stay out of the public payload.
+        assert.ok(!Object.hasOwn(publicData.space, "apiKey"));
+        assert.ok(!Object.hasOwn(publicData.space, "llm"));
+        assert.ok(!Object.hasOwn(publicData.space, "accessPassword"));
+        assert.ok(!serialized.includes("private-key-never-in-client"));
+        if (published.accessPassword)
+          assert.ok(!serialized.includes(published.accessPassword));
       },
     );
     await t.test(

@@ -38,6 +38,22 @@ const href = z
     "Lien non autorisé",
   )
   .nullable();
+export const spaceImportSourceSchema = z.object({
+  provider: z.enum(["github", "gitlab", "notion"]),
+  repository: z.string().max(300),
+  branch: z.string().min(1).max(200),
+  path: z.string().max(500),
+  rootPageId: z.string().max(100).optional(),
+  format: z
+    .enum(["auto", "commonmark", "gfm", "mdx", "obsidian"])
+    .default("auto"),
+  locale: locale.default("en"),
+  autoSync: z.boolean(),
+  syncIntervalMinutes: z.number().int().min(5).max(24 * 60).default(60),
+  lastSyncAt: z.string().nullable(),
+  lastSyncError: z.string().nullable(),
+});
+
 export const spacePatchSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(5000).optional(),
@@ -52,6 +68,7 @@ export const spacePatchSchema = z.object({
   locales: z.array(locale).min(1).max(30).optional(),
   versionLabel: z.string().min(1).max(80).optional(),
   llm: llmSchema.nullable().optional(),
+  importSource: spaceImportSourceSchema.nullable().optional(),
 });
 export const documentPatchSchema = z.object({
   title: z.string().min(1).max(500).optional(),

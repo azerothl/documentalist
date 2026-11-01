@@ -1,7 +1,76 @@
 import { nanoid } from "nanoid";
 import { repairTipTapDoc } from "./markdown";
+import { ensureProductGuide } from "./product-guide";
 import { richDoc } from "./tiptap-text";
-import type { LlmSettings, StoreData } from "./types";
+import type { LlmSettings, SpaceImportSource, StoreData } from "./types";
+
+function inferDocsRoot(paths: string[]): string {
+  const pages = paths.filter((p) => /\.(md|mdx|markdown)$/i.test(p));
+  if (!pages.length) return "docs";
+  if (pages.every((p) => !p.includes("/"))) return "";
+  const counts = new Map<string, number>();
+  for (const p of pages) {
+    const seg = p.split("/")[0] || "";
+    if (!seg) continue;
+    counts.set(seg, (counts.get(seg) ?? 0) + 1);
+  }
+  let best = "docs";
+  let n = 0;
+  for (const [key, value] of counts) {
+    if (value > n) {
+      best = key;
+      n = value;
+    }
+  }
+  return best;
+}
+
+/** Recover sync metadata for Spaces imported before importSource existed. */
+function backfillImportSource(
+  space: StoreData["spaces"][number],
+  documents: StoreData["documents"],
+): void {
+  if (space.importSource) return;
+  const sourced = documents.filter(
+    (d) => d.spaceId === space.id && d.sourcePath,
+  );
+  if (!sourced.length) return;
+
+  const desc = space.description.match(
+    /^Import (github|gitlab|notion)\s*:\s*(.+?)@([^\s]+)/i,
+  );
+  const tag = sourced
+    .flatMap((d) => d.tags ?? [])
+    .find((t) => ["github", "gitlab", "notion"].includes(t.toLowerCase()));
+  let provider = (desc?.[1] || tag || "").toLowerCase();
+  if (!["github", "gitlab", "notion"].includes(provider)) {
+    if (/^[\w.-]+\/[\w.-]+$/.test(space.name)) provider = "github";
+    else return;
+  }
+
+  const repository =
+    desc?.[2]?.trim() ||
+    (provider === "github" && /^[\w.-]+\/[\w.-]+$/.test(space.name)
+      ? space.name
+      : provider === "notion"
+        ? space.name
+        : "");
+  if (!repository) return;
+
+  const source: SpaceImportSource = {
+    provider: provider as SpaceImportSource["provider"],
+    repository,
+    branch: desc?.[3]?.trim() || "main",
+    path: inferDocsRoot(sourced.map((d) => d.sourcePath!)),
+    format: "auto",
+    locale: space.defaultLocale || "en",
+    autoSync: true,
+    syncIntervalMinutes: 60,
+    lastSyncAt: null,
+    lastSyncError: null,
+  };
+  space.importSource = source;
+}
 
 const DEFAULT_LLM: LlmSettings = {
   enabled: false,
@@ -89,6 +158,7 @@ export function migrateStore(data: StoreData): StoreData {
       );
     }
     if (space.llm === undefined) space.llm = null;
+    if (space.importSource === undefined) space.importSource = null;
   }
 
   for (const doc of data.documents) {
@@ -101,6 +171,10 @@ export function migrateStore(data: StoreData): StoreData {
     if (doc.sourcePath === undefined) doc.sourcePath = null;
     if (doc.markdownFormat === undefined) doc.markdownFormat = null;
     doc.content = repairTipTapDoc(doc.content);
+  }
+
+  for (const space of data.spaces) {
+    backfillImportSource(space, data.documents);
   }
 
   for (const snap of data.spaces) {
@@ -117,6 +191,20 @@ export function migrateStore(data: StoreData): StoreData {
 
   if (data.templates.length === 0) {
     data.templates.push(...defaultTemplates(data.organization.id));
+  }
+
+  // Refresh / insert the built-in Product docs guide (AI, imports, tools, …).
+  if (ensureProductGuide(data)) {
+    const productSpace =
+      data.spaces.find((s) => s.id === "spc_product") ??
+      data.spaces.find((s) => s.slug === "product-docs");
+    if (productSpace?.publishedSnapshot) {
+      productSpace.publishedSnapshot = {
+        publishedAt: new Date().toISOString(),
+        documents: data.documents.filter((d) => d.spaceId === productSpace.id),
+      };
+      productSpace.publishedAt = productSpace.publishedSnapshot.publishedAt;
+    }
   }
 
   return data;

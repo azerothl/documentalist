@@ -5,6 +5,7 @@ import { fetchGithubMarkdownFiles } from "./github";
 import { dispatchPublishHooks, importOpenApiAsMarkdown } from "./integrations";
 import { parseMarkdown, repairTipTapDoc } from "./markdown";
 import { migrateStore } from "./migrate";
+import { gitlabFiles, notionFiles } from "./remote-imports";
 import { createSeedStore } from "./seed";
 import { uniqueSlug, slugify } from "./slug";
 import { emptyDoc } from "./tiptap-text";
@@ -28,6 +29,7 @@ import type {
   Revision,
   Snippet,
   Space,
+  SpaceImportSource,
   StoreData,
   Template,
   TipTapDoc,
@@ -139,6 +141,7 @@ function newSpaceFields(
     publishedAt: null,
     publishedSnapshot: null,
     llm: null,
+    importSource: null,
     ...partial,
   };
 }
@@ -230,6 +233,7 @@ export async function updateSpace(
       | "locales"
       | "versionLabel"
       | "llm"
+      | "importSource"
     >
   >,
 ): Promise<Space | undefined> {
@@ -764,6 +768,43 @@ export async function updateComment(
   });
 }
 
+export type ImportApplyResult = {
+  space: Space;
+  imported: number;
+  updated: number;
+  skipped: number;
+  removed: number;
+};
+
+function buildImportSource(input: {
+  provider: SpaceImportSource["provider"];
+  repository: string;
+  branch?: string;
+  path?: string;
+  rootPageId?: string;
+  format?: MarkdownFormat;
+  locale?: string;
+  autoSync?: boolean;
+  syncIntervalMinutes?: number;
+}): SpaceImportSource {
+  return {
+    provider: input.provider,
+    repository: input.repository,
+    branch: input.branch?.trim() || "main",
+    path: (input.path ?? "docs").replace(/^\/+|\/+$/g, ""),
+    rootPageId: input.rootPageId,
+    format: input.format ?? "auto",
+    locale: input.locale ?? "en",
+    autoSync: input.autoSync !== false,
+    syncIntervalMinutes: Math.min(
+      24 * 60,
+      Math.max(5, input.syncIntervalMinutes ?? 60),
+    ),
+    lastSyncAt: null,
+    lastSyncError: null,
+  };
+}
+
 export async function importGithubRepo(input: {
   repository: string;
   branch?: string;
@@ -772,7 +813,16 @@ export async function importGithubRepo(input: {
   spaceName?: string;
   format?: MarkdownFormat;
   locale?: string;
-}): Promise<{ space: Space; imported: number; skipped: number }> {
+  autoSync?: boolean;
+  syncIntervalMinutes?: number;
+  spaceId?: string;
+}): Promise<
+  ImportApplyResult & {
+    matched: number;
+    truncated: boolean;
+    failed: string[];
+  }
+> {
   const github = await fetchGithubMarkdownFiles({
     repository: input.repository,
     branch: input.branch,
@@ -780,7 +830,23 @@ export async function importGithubRepo(input: {
     token: input.token,
   });
 
-  return importRepositoryFiles({ ...input, provider: "github" }, github);
+  const result = await importRepositoryFiles(
+    {
+      ...input,
+      provider: "github",
+      repository: input.repository,
+      autoSync: input.autoSync,
+      syncIntervalMinutes: input.syncIntervalMinutes,
+      spaceId: input.spaceId,
+    },
+    github,
+  );
+  return {
+    ...result,
+    matched: github.matched,
+    truncated: github.truncated,
+    failed: github.failed,
+  };
 }
 
 export async function importRepositoryFiles(
@@ -790,44 +856,95 @@ export async function importRepositoryFiles(
     locale?: string;
     format?: MarkdownFormat;
     provider: string;
+    repository?: string;
+    branch?: string;
+    rootPageId?: string;
+    autoSync?: boolean;
+    syncIntervalMinutes?: number;
+    /** When set, upsert into this Space instead of creating a new one */
+    spaceId?: string;
   },
   github: {
     owner: string;
     repo: string;
     branch: string;
     files: { path: string; content: string }[];
+    matched?: number;
+    truncated?: boolean;
+    failed?: string[];
   },
-) {
+): Promise<ImportApplyResult> {
   return enqueue(async (data) => {
     migrateStore(data);
-    const id = `spc_${nanoid(8)}`;
-    const name = input.spaceName?.trim() || `${github.owner}/${github.repo}`;
-    const slug = uniqueSlug(
-      name,
-      data.spaces.map((s) => s.slug),
-    );
     const locale = input.locale ?? "en";
-    const space = newSpaceFields({
-      id,
-      orgId: data.organization.id,
-      name,
-      slug,
-      description: `Import ${input.provider} : ${github.owner}/${github.repo}@${github.branch}`,
-      defaultLocale: locale,
-      locales: [locale, "fr"].filter((v, i, a) => a.indexOf(v) === i),
+    const rootPrefix = (input.path ?? "docs").replace(/^\/+|\/+$/g, "");
+    const repository =
+      input.repository?.trim() || `${github.owner}/${github.repo}`;
+    const provider = (
+      ["github", "gitlab", "notion"].includes(input.provider)
+        ? input.provider
+        : "github"
+    ) as SpaceImportSource["provider"];
+
+    let space: Space;
+    if (input.spaceId) {
+      const existing = data.spaces.find((s) => s.id === input.spaceId);
+      if (!existing) throw new Error("Espace introuvable pour la synchronisation.");
+      space = existing;
+    } else {
+      const id = `spc_${nanoid(8)}`;
+      const name = input.spaceName?.trim() || `${github.owner}/${github.repo}`;
+      const slug = uniqueSlug(
+        name,
+        data.spaces.map((s) => s.slug),
+      );
+      space = newSpaceFields({
+        id,
+        orgId: data.organization.id,
+        name,
+        slug,
+        description: `Import ${provider} : ${repository}@${github.branch}`,
+        defaultLocale: locale,
+        locales: [locale, "fr"].filter((v, i, a) => a.indexOf(v) === i),
+      });
+      data.spaces.push(space);
+    }
+
+    const source = buildImportSource({
+      provider,
+      repository,
+      branch: input.branch || github.branch,
+      path: rootPrefix,
+      rootPageId: input.rootPageId,
+      format: input.format,
+      locale,
+      autoSync: input.autoSync ?? space.importSource?.autoSync ?? true,
+      syncIntervalMinutes:
+        input.syncIntervalMinutes ??
+        space.importSource?.syncIntervalMinutes ??
+        60,
     });
-    data.spaces.push(space);
 
     const folderIds = new Map<string, string>();
-    let imported = 0;
-    let skipped = 0;
+    // Reuse existing folders keyed by sourcePath.
+    for (const doc of data.documents) {
+      if (
+        doc.spaceId === space.id &&
+        doc.kind === "category" &&
+        doc.sourcePath &&
+        doc.locale === locale
+      ) {
+        folderIds.set(doc.sourcePath, doc.id);
+      }
+    }
 
-    const rootPrefix = (input.path ?? "docs").replace(/^\/+|\/+$/g, "");
+    let imported = 0;
+    let updated = 0;
+    let skipped = 0;
+    const seenPaths = new Set<string>();
 
     function ensureFolder(dirPath: string, parentId: string | null): string {
-      if (!dirPath || dirPath === ".") {
-        return parentId ?? "";
-      }
+      if (!dirPath || dirPath === ".") return parentId ?? "";
       if (folderIds.has(dirPath)) return folderIds.get(dirPath)!;
       const parentPath = dirPath.includes("/")
         ? dirPath.slice(0, dirPath.lastIndexOf("/"))
@@ -837,6 +954,17 @@ export async function importRepositoryFiles(
           ? ensureFolder(parentPath, parentId)
           : parentId;
       const title = dirPath.split("/").pop() || dirPath;
+      const existing = data.documents.find(
+        (d) =>
+          d.spaceId === space.id &&
+          d.kind === "category" &&
+          d.sourcePath === dirPath &&
+          d.locale === locale,
+      );
+      if (existing) {
+        folderIds.set(dirPath, existing.id);
+        return existing.id;
+      }
       const folderId = `doc_${nanoid(8)}`;
       const siblings = data.documents.filter(
         (d) =>
@@ -858,7 +986,7 @@ export async function importRepositoryFiles(
         content: emptyDoc(),
         position: siblings.length,
         hidden: false,
-        tags: [input.provider],
+        tags: [provider],
         locale,
         translationOf: null,
         sourcePath: dirPath,
@@ -874,6 +1002,7 @@ export async function importRepositoryFiles(
 
     for (const file of github.files) {
       try {
+        seenPaths.add(file.path);
         const parsed = parseMarkdown(file.content, input.format ?? "auto");
         const base = file.path.split("/").pop() || file.path;
         const title =
@@ -885,15 +1014,38 @@ export async function importRepositoryFiles(
           : "";
         const parentId =
           dir && dir !== rootPrefix ? ensureFolder(dir, null) : null;
+        const tags = parsed.frontmatter.tags
+          ? parsed.frontmatter.tags.split(/[,\s]+/).filter(Boolean)
+          : [provider];
+        const content = repairTipTapDoc(parsed.doc);
+        const existing = data.documents.find(
+          (d) =>
+            d.spaceId === space.id &&
+            d.kind === "page" &&
+            d.sourcePath === file.path &&
+            d.locale === locale,
+        );
+        if (existing) {
+          existing.title = title;
+          existing.parentId = parentId;
+          existing.content = content;
+          existing.tags = tags;
+          existing.markdownFormat = parsed.format;
+          existing.seoTitle = parsed.frontmatter.title ?? existing.seoTitle;
+          existing.seoDescription =
+            parsed.frontmatter.description ||
+            parsed.frontmatter.summary ||
+            existing.seoDescription;
+          existing.updatedAt = new Date().toISOString();
+          updated += 1;
+          continue;
+        }
         const siblings = data.documents.filter(
           (d) =>
             d.spaceId === space.id &&
             d.parentId === parentId &&
             d.locale === locale,
         );
-        const tags = parsed.frontmatter.tags
-          ? parsed.frontmatter.tags.split(/[,\s]+/).filter(Boolean)
-          : [input.provider];
         data.documents.push({
           id: `doc_${nanoid(8)}`,
           spaceId: space.id,
@@ -905,7 +1057,7 @@ export async function importRepositoryFiles(
           ),
           kind: "page",
           href: null,
-          content: repairTipTapDoc(parsed.doc),
+          content,
           position: siblings.length,
           hidden: false,
           tags,
@@ -927,7 +1079,21 @@ export async function importRepositoryFiles(
       }
     }
 
-    if (imported === 0) {
+    // Drop imported pages that disappeared remotely (keep local-only pages).
+    let removed = 0;
+    const pathPrefix = rootPrefix ? `${rootPrefix}/` : "";
+    data.documents = data.documents.filter((d) => {
+      if (d.spaceId !== space.id || d.locale !== locale) return true;
+      if (d.kind !== "page" || !d.sourcePath) return true;
+      if (rootPrefix && d.sourcePath !== rootPrefix && !d.sourcePath.startsWith(pathPrefix)) {
+        return true;
+      }
+      if (seenPaths.has(d.sourcePath)) return true;
+      removed += 1;
+      return false;
+    });
+
+    if (imported + updated === 0 && !input.spaceId) {
       data.documents.push({
         id: `doc_${nanoid(8)}`,
         spaceId: space.id,
@@ -951,16 +1117,139 @@ export async function importRepositoryFiles(
       });
     }
 
+    const now = new Date().toISOString();
+    source.lastSyncAt = now;
+    source.lastSyncError = null;
+    space.importSource = source;
+
     const ghIntegration = data.integrations.find(
-      (i) => i.provider === input.provider,
+      (i) => i.provider === provider,
     );
-    if (ghIntegration) {
-      ghIntegration.lastSyncAt = new Date().toISOString();
-    }
+    if (ghIntegration) ghIntegration.lastSyncAt = now;
 
     await persist(data);
-    return { space: structuredClone(space), imported, skipped };
+    return {
+      space: structuredClone(space),
+      imported,
+      updated,
+      skipped,
+      removed,
+    };
   });
+}
+
+/** Re-fetch the linked third-party source into an existing Space. */
+export async function syncSpaceImport(
+  spaceId: string,
+  options?: { force?: boolean },
+): Promise<
+  ImportApplyResult & {
+    matched?: number;
+    truncated?: boolean;
+    failed?: string[];
+    skippedReason?: string;
+  }
+> {
+  const data = await readStore();
+  const space = data.spaces.find((s) => s.id === spaceId);
+  if (!space?.importSource) {
+    throw new Error("Cet espace n’a pas de source d’import à synchroniser.");
+  }
+  const src = space.importSource;
+  if (!options?.force) {
+    if (!src.autoSync) {
+      return {
+        space: structuredClone(space),
+        imported: 0,
+        updated: 0,
+        skipped: 0,
+        removed: 0,
+        skippedReason: "Synchronisation automatique désactivée.",
+      };
+    }
+    if (src.lastSyncAt) {
+      const elapsed = Date.now() - Date.parse(src.lastSyncAt);
+      const minMs = src.syncIntervalMinutes * 60_000;
+      if (Number.isFinite(elapsed) && elapsed < minMs) {
+        return {
+          space: structuredClone(space),
+          imported: 0,
+          updated: 0,
+          skipped: 0,
+          removed: 0,
+          skippedReason: `Prochaine sync auto dans ${Math.ceil((minMs - elapsed) / 60_000)} min.`,
+        };
+      }
+    }
+  }
+
+  try {
+    if (src.provider === "github") {
+      const integrations = data.integrations;
+      const gh = integrations.find((i) => i.provider === "github" && i.enabled);
+      const token = gh?.config.token || null;
+      return importGithubRepo({
+        repository: src.repository,
+        branch: src.branch,
+        path: src.path,
+        token,
+        format: src.format,
+        locale: src.locale,
+        autoSync: src.autoSync,
+        syncIntervalMinutes: src.syncIntervalMinutes,
+        spaceId,
+      });
+    }
+
+    const integration = data.integrations.find(
+      (i) => i.provider === src.provider && i.enabled,
+    );
+    if (!integration) {
+      throw new Error(
+        `Intégration ${src.provider} absente ou désactivée — enregistrez-la dans Outils.`,
+      );
+    }
+
+    const files =
+      src.provider === "gitlab"
+        ? await gitlabFiles({
+            host: integration.config.host,
+            token: integration.config.token,
+            repository: src.repository,
+            branch: src.branch,
+            path: src.path,
+          })
+        : await notionFiles(
+            integration.config.token,
+            src.rootPageId || integration.config.rootPageId || "",
+          );
+
+    return importRepositoryFiles(
+      {
+        provider: src.provider,
+        repository: src.repository,
+        branch: src.branch,
+        path: src.provider === "notion" ? "docs" : src.path,
+        rootPageId: src.rootPageId,
+        format: src.format,
+        locale: src.locale,
+        autoSync: src.autoSync,
+        syncIntervalMinutes: src.syncIntervalMinutes,
+        spaceId,
+      },
+      files,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Sync échouée";
+    await enqueue(async (store) => {
+      const target = store.spaces.find((s) => s.id === spaceId);
+      if (target?.importSource) {
+        target.importSource.lastSyncError = message;
+      }
+      await persist(store);
+    });
+    throw error;
+  }
 }
 
 export async function importOpenApiIntegration(

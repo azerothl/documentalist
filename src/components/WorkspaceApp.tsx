@@ -9,6 +9,7 @@ import { DocTree } from "@/components/DocTree";
 import { GitHubImportModal } from "@/components/GitHubImportModal";
 import { IntegrationsPanel } from "@/components/IntegrationsPanel";
 import { LlmSettingsFields } from "@/components/LlmSettingsFields";
+import { SpaceSyncPanel } from "@/components/SpaceSyncPanel";
 import { SidePanel } from "@/components/SidePanel";
 import {
   AccountNavigation,
@@ -134,6 +135,7 @@ export function WorkspaceApp({
     "space" | "org-llm" | "space-llm"
   >("space");
   const [githubOpen, setGithubOpen] = useState(false);
+  const [githubPreferCurrent, setGithubPreferCurrent] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [preview, setPreview] = useState(false);
   const [sideTab, setSideTab] = useState<
@@ -166,6 +168,7 @@ export function WorkspaceApp({
   const [moving, setMoving] = useState(false);
   const [operationStatus, setOperationStatus] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -273,6 +276,113 @@ export function WorkspaceApp({
     setPreview(false);
     setMenuOpen(false);
   }
+
+  async function syncSpaceImport(options?: {
+    force?: boolean;
+    quiet?: boolean;
+    spaceId?: string;
+  }) {
+    const force = options?.force !== false;
+    const quiet = options?.quiet === true;
+    if (account.role === "viewer") return;
+    const spaceId = options?.spaceId ?? payload.space.id;
+    setSyncBusy(true);
+    try {
+      const res = await fetch("/api/spaces/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spaceId, force }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sync échouée");
+      if (data.skippedReason) {
+        if (!quiet) setOperationStatus(data.skippedReason);
+        if (data.space) {
+          setPayload((prev) => ({
+            ...prev,
+            space: { ...prev.space, ...data.space },
+          }));
+        }
+        return;
+      }
+      await reloadSpace(spaceId);
+      if (!quiet) {
+        const parts = [
+          `${data.imported ?? 0} ajoutée(s)`,
+          `${data.updated ?? 0} mise(s) à jour`,
+        ];
+        if (data.removed) parts.push(`${data.removed} retirée(s)`);
+        setOperationStatus(`Synchronisation : ${parts.join(" · ")}`);
+      }
+    } catch (e) {
+      if (!quiet) {
+        setNotice(e instanceof Error ? e.message : "Sync échouée");
+      }
+      throw e;
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (account.role === "viewer") return;
+    if (!payload.space.importSource?.autoSync) return;
+    const spaceId = payload.space.id;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/spaces/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spaceId, force: false }),
+        });
+        const data = await res.json();
+        if (cancelled || !res.ok || data.skippedReason) return;
+        await reloadSpace(spaceId);
+      } catch {
+        /* lastSyncError is persisted server-side */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Auto-sync once when opening / switching Spaces.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- space.id only
+  }, [payload.space.id, account.role]);
+
+  useEffect(() => {
+    if (account.role === "viewer") return;
+    const source = payload.space.importSource;
+    if (!source?.autoSync) return;
+    const spaceId = payload.space.id;
+    const tickMs = Math.max(
+      60_000,
+      Math.floor(source.syncIntervalMinutes / 2) * 60_000,
+    );
+    const id = window.setInterval(() => {
+      void (async () => {
+        try {
+          const res = await fetch("/api/spaces/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ spaceId, force: false }),
+          });
+          const data = await res.json();
+          if (!res.ok || data.skippedReason) return;
+          await reloadSpace(spaceId);
+        } catch {
+          /* ignore background failures */
+        }
+      })();
+    }, tickMs);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- interval keyed by space + settings
+  }, [
+    payload.space.id,
+    payload.space.importSource?.autoSync,
+    payload.space.importSource?.syncIntervalMinutes,
+    account.role,
+  ]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -825,6 +935,37 @@ export function WorkspaceApp({
 
   const workspaceTools = (
     <>
+      {account.role !== "viewer" ? (
+        payload.space.importSource ? (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={syncBusy}
+            title={
+              payload.space.importSource.lastSyncError
+                ? payload.space.importSource.lastSyncError
+                : `Source ${payload.space.importSource.provider}`
+            }
+            onClick={(event) => {
+              event.currentTarget.closest("details")?.removeAttribute("open");
+              void syncSpaceImport({ force: true }).catch(() => undefined);
+            }}
+          >
+            {syncBusy ? "Sync…" : "Relancer sync"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={(event) => {
+              event.currentTarget.closest("details")?.removeAttribute("open");
+              setToolsOpen(true);
+            }}
+          >
+            Configurer sync
+          </button>
+        )
+      ) : null}
       <button
         type="button"
         className="secondary-button"
@@ -1392,8 +1533,14 @@ export function WorkspaceApp({
 
       <GitHubImportModal
         open={githubOpen}
-        onClose={() => setGithubOpen(false)}
+        onClose={() => {
+          setGithubOpen(false);
+          setGithubPreferCurrent(false);
+        }}
         onImported={(space) => void reloadSpace(space.id)}
+        targetSpaceId={payload.space.id}
+        targetSpaceName={payload.space.name}
+        preferCurrentSpace={githubPreferCurrent}
       />
 
       <Dialog
@@ -1401,6 +1548,27 @@ export function WorkspaceApp({
         onClose={() => setToolsOpen(false)}
         title="Outils"
       >
+        {account.role !== "viewer" ? (
+          <SpaceSyncPanel
+            spaceId={payload.space.id}
+            importSource={payload.space.importSource}
+            syncBusy={syncBusy}
+            onImportSourceChange={(source) =>
+              setPayload((prev) => ({
+                ...prev,
+                space: { ...prev.space, importSource: source },
+              }))
+            }
+            onResync={() =>
+              syncSpaceImport({ force: true, spaceId: payload.space.id })
+            }
+            onOpenGithubImport={() => {
+              setToolsOpen(false);
+              setGithubPreferCurrent(true);
+              setGithubOpen(true);
+            }}
+          />
+        ) : null}
         <section className="mb-5 space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
             Importer
@@ -1418,6 +1586,7 @@ export function WorkspaceApp({
               className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
               onClick={() => {
                 setToolsOpen(false);
+                setGithubPreferCurrent(false);
                 setGithubOpen(true);
               }}
             >
@@ -1532,6 +1701,7 @@ export function WorkspaceApp({
             }
             onOpenGithubImport={() => {
               setToolsOpen(false);
+              setGithubPreferCurrent(false);
               setGithubOpen(true);
             }}
           />
