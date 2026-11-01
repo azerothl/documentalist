@@ -1,12 +1,13 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { readStore, updateOrganization } from "@/lib/store";
 
-export async function GET() {
+async function handleGET() {
   const data = await readStore();
   return NextResponse.json({ organization: data.organization });
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   const body = await request.json();
   const organization = await updateOrganization({
     name: body.name,
@@ -14,3 +15,7 @@ export async function PATCH(request: Request) {
   });
   return NextResponse.json({ organization });
 }
+
+export const GET = secureRoute(handleGET);
+
+export const PATCH = secureRoute(handlePATCH);

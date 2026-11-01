@@ -1,8 +1,9 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { createDocument, listDocuments } from "@/lib/store";
 import type { DocumentKind, MarkdownFormat, TipTapDoc } from "@/lib/types";
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const { searchParams } = new URL(request.url);
   const spaceId = searchParams.get("spaceId");
   if (!spaceId) {
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ documents });
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const body = (await request.json()) as {
     spaceId?: string;
     title?: string;
@@ -41,3 +42,7 @@ export async function POST(request: Request) {
   });
   return NextResponse.json({ document }, { status: 201 });
 }
+
+export const GET = secureRoute(handleGET);
+
+export const POST = secureRoute(handlePOST);

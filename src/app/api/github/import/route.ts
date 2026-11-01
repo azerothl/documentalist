@@ -1,8 +1,9 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { listIntegrations, importGithubRepo } from "@/lib/store";
 import type { MarkdownFormat } from "@/lib/types";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const body = (await request.json()) as {
       repository?: string;
@@ -44,3 +45,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+export const POST = secureRoute(handlePOST);

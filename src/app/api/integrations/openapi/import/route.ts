@@ -1,7 +1,8 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { importOpenApiIntegration, listIntegrations } from "@/lib/store";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const body = (await request.json()) as {
       spaceId?: string;
@@ -28,3 +29,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+export const POST = secureRoute(handlePOST);

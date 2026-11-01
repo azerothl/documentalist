@@ -1,9 +1,10 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { getSpace, getWorkspacePayload, updateSpace } from "@/lib/store";
 
 type Params = { params: Promise<{ spaceId: string }> };
 
-export async function GET(_request: Request, { params }: Params) {
+async function handleGET(_request: Request, { params }: Params) {
   const { spaceId } = await params;
   const payload = await getWorkspacePayload(spaceId);
   if (!payload) {
@@ -17,7 +18,7 @@ export async function GET(_request: Request, { params }: Params) {
   return NextResponse.json(payload);
 }
 
-export async function PATCH(request: Request, { params }: Params) {
+async function handlePATCH(request: Request, { params }: Params) {
   const { spaceId } = await params;
   const body = await request.json();
   const space = await updateSpace(spaceId, body);
@@ -26,3 +27,7 @@ export async function PATCH(request: Request, { params }: Params) {
   }
   return NextResponse.json({ space });
 }
+
+export const GET = secureRoute(handleGET);
+
+export const PATCH = secureRoute(handlePATCH);

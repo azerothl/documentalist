@@ -1,7 +1,8 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { reorderDocuments } from "@/lib/store";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const body = (await request.json()) as {
     spaceId?: string;
     orderedIds?: string[];
@@ -20,3 +21,5 @@ export async function POST(request: Request) {
   );
   return NextResponse.json({ documents });
 }
+
+export const POST = secureRoute(handlePOST);

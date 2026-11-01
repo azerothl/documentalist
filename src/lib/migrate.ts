@@ -63,6 +63,9 @@ function defaultTemplates(orgId: string) {
 
 /** Normalize older store.json shapes in place. */
 export function migrateStore(data: StoreData): StoreData {
+  if ((data.schemaVersion ?? 0) > 1)
+    throw new Error("Version de données plus récente que l’application.");
+  data.schemaVersion = 1;
   if (!Array.isArray(data.comments)) data.comments = [];
   if (!Array.isArray(data.templates)) data.templates = [];
   if (!Array.isArray(data.revisions)) data.revisions = [];
@@ -72,6 +75,8 @@ export function migrateStore(data: StoreData): StoreData {
   if (!data.organization.llm) data.organization.llm = { ...DEFAULT_LLM };
 
   for (const space of data.spaces) {
+    // Legacy free-form CSS is retired; the portal supports an accent colour.
+    space.customCss = "";
     if (space.accessPassword === undefined) space.accessPassword = null;
     if (space.customCss === undefined) space.customCss = "";
     if (!space.versionGroupId) space.versionGroupId = `vg_${space.id}`;

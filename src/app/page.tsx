@@ -4,7 +4,9 @@ import { listSpaces } from "@/lib/store";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const spaces = await listSpaces();
+  const spaces = (await listSpaces()).filter(
+    (s) => s.isPublic && s.publishedSnapshot,
+  );
   const published = spaces.filter((s) => s.publishedSnapshot);
 
   return (
@@ -16,46 +18,49 @@ export default async function HomePage() {
               Documentalist
             </span>
             <div className="flex items-center gap-3 text-sm">
-              <Link href="/app" className="text-[var(--ink-muted)] hover:text-[var(--ink)]">
-                Open workspace
+              <Link
+                href="/app"
+                className="text-[var(--ink-muted)] hover:text-[var(--ink)]"
+              >
+                Ouvrir l’espace de rédaction
               </Link>
               <Link
                 href="/app"
                 className="rounded-md bg-[var(--accent)] px-3 py-1.5 font-medium text-white"
               >
-                Start writing
+                Commencer à écrire
               </Link>
             </div>
           </nav>
 
           <div className="max-w-2xl pt-6">
             <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">
-              Knowledge portals
+              Portails de documentation
             </p>
             <h1 className="font-[family-name:var(--font-display)] text-4xl leading-[1.1] tracking-tight text-[var(--ink)] md:text-5xl">
               Documentalist
             </h1>
             <p className="mt-4 max-w-xl text-lg leading-relaxed text-[var(--ink-muted)]">
-              Write in Spaces, nest pages like a product wiki, slash-insert blocks,
-              then publish a searchable reader portal — the Archbee loop, running locally.
+              Organisez vos guides, rédigez avec des blocs et publiez un portail
+              consultable et accessible à votre équipe.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 href="/app"
                 className="rounded-md bg-[var(--ink)] px-4 py-2.5 text-sm font-medium text-[var(--bg)]"
               >
-                Open authoring app
+                Rédiger la documentation
               </Link>
               {published[0] ? (
                 <Link
                   href={`/p/${published[0].slug}`}
                   className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 text-sm"
                 >
-                  View {published[0].name}
+                  Consulter {published[0].name}
                 </Link>
               ) : (
                 <span className="rounded-md border border-dashed border-[var(--line)] px-4 py-2.5 text-sm text-[var(--ink-faint)]">
-                  Publish a Space from the app to unlock a portal
+                  Publiez un espace pour ouvrir son portail
                 </span>
               )}
             </div>
@@ -66,16 +71,16 @@ export default async function HomePage() {
       <section className="mx-auto grid max-w-5xl gap-10 px-6 py-14 md:grid-cols-3">
         {[
           {
-            title: "Spaces & tree",
-            body: "Nest pages, drag reorder, GitHub import, OpenAPI bootstrap, versions, and locales.",
+            title: "Espaces et navigation",
+            body: "Pages imbriquées, classement par glisser-déposer, imports GitHub, GitLab, Notion et OpenAPI, versions et langues.",
           },
           {
-            title: "Block editor",
-            body: "Slash menu, GFM/MDX/Obsidian imports, preview, comments, SEO, translations, revision restore.",
+            title: "Éditeur de documents",
+            body: "Menu de blocs, imports Markdown, aperçu, commentaires, référencement, traductions et restauration des révisions.",
           },
           {
-            title: "Publish portal",
-            body: "Version + language switchers, password gate, custom CSS, Slack/Discord/webhook notify on publish.",
+            title: "Portail de lecture",
+            body: "Choix de version et de langue, accès protégé et notifications de publication vers Slack, Discord ou un webhook.",
           },
         ].map((item) => (
           <div key={item.title}>
@@ -92,7 +97,7 @@ export default async function HomePage() {
       <section className="border-t border-[var(--line)] bg-[var(--surface)]">
         <div className="mx-auto max-w-5xl px-6 py-12">
           <h2 className="font-[family-name:var(--font-display)] text-2xl tracking-tight">
-            Seeded Spaces
+            Documentation publiée
           </h2>
           <ul className="mt-6 divide-y divide-[var(--line)]">
             {spaces.map((space) => (
@@ -104,19 +109,22 @@ export default async function HomePage() {
                   <div className="font-medium">{space.name}</div>
                   <div className="text-sm text-[var(--ink-faint)]">
                     /{space.slug}
-                    {space.publishedAt ? " · published" : " · draft"}
+                    {space.publishedAt ? " · publié" : " · brouillon"}
                   </div>
                 </div>
                 <div className="flex gap-2 text-sm">
-                  <Link href="/app" className="text-[var(--accent)] hover:underline">
-                    Edit
+                  <Link
+                    href="/app"
+                    className="text-[var(--accent)] hover:underline"
+                  >
+                    Rédiger
                   </Link>
                   {space.publishedSnapshot ? (
                     <Link
                       href={`/p/${space.slug}`}
                       className="text-[var(--ink-muted)] hover:underline"
                     >
-                      Portal
+                      Consulter
                     </Link>
                   ) : null}
                 </div>

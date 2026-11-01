@@ -1,9 +1,10 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { publishSpace } from "@/lib/store";
 
 type Params = { params: Promise<{ spaceId: string }> };
 
-export async function POST(_request: Request, { params }: Params) {
+async function handlePOST(_request: Request, { params }: Params) {
   const { spaceId } = await params;
   const space = await publishSpace(spaceId);
   if (!space) {
@@ -11,3 +12,5 @@ export async function POST(_request: Request, { params }: Params) {
   }
   return NextResponse.json({ space });
 }
+
+export const POST = secureRoute(handlePOST);

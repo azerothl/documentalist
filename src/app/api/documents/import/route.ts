@@ -1,9 +1,10 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { parseMarkdown, repairTipTapDoc } from "@/lib/markdown";
 import { createDocument } from "@/lib/store";
 import type { MarkdownFormat } from "@/lib/types";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const body = (await request.json()) as {
     spaceId?: string;
     title?: string;
@@ -44,3 +45,5 @@ export async function POST(request: Request) {
     { status: 201 },
   );
 }
+
+export const POST = secureRoute(handlePOST);

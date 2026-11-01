@@ -78,7 +78,10 @@ function nodeToMd(node: TipTapNode): string {
         .split(" | ")
         .map(() => "---")
         .join(" | ")} |`;
-      const body = rows.slice(1).map((r) => `| ${r} |`).join("\n");
+      const body = rows
+        .slice(1)
+        .map((r) => `| ${r} |`)
+        .join("\n");
       return `${header}\n${sep}${body ? `\n${body}` : ""}\n\n`;
     }
     case "orderedList":
@@ -122,7 +125,9 @@ export function tipTapToMarkdown(doc: TipTapDoc): string {
   return (doc.content ?? []).map(nodeToMd).join("").trim() + "\n";
 }
 
-export function detectMarkdownFormat(md: string): Exclude<MarkdownFormat, "auto"> {
+export function detectMarkdownFormat(
+  md: string,
+): Exclude<MarkdownFormat, "auto"> {
   if (
     /^---\s*\n[\s\S]*?\n---\s*\n/.test(md) &&
     /(^|\n)(import\s+|export\s+|<[A-Z][A-Za-z0-9]*)/.test(md)
@@ -142,11 +147,7 @@ export function detectMarkdownFormat(md: string): Exclude<MarkdownFormat, "auto"
   ) {
     return "obsidian";
   }
-  if (
-    /^\|.+\|$/m.test(md) ||
-    /- \[[ xX]\] /.test(md) ||
-    /~~.+~~/.test(md)
-  ) {
+  if (/^\|.+\|$/m.test(md) || /- \[[ xX]\] /.test(md) || /~~.+~~/.test(md)) {
     return "gfm";
   }
   return "commonmark";
@@ -191,17 +192,20 @@ function stripMdx(md: string): string {
 }
 
 function resolveWikilinks(md: string): string {
-  return md.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, target, label) => {
-    const text = (label ?? target).trim();
-    const href = `#${String(target).trim().toLowerCase().replace(/\s+/g, "-")}`;
-    return `[${text}](${href})`;
-  });
+  return md.replace(
+    /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_m, target, label) => {
+      const text = (label ?? target).trim();
+      const href = `#${String(target).trim().toLowerCase().replace(/\s+/g, "-")}`;
+      return `[${text}](${href})`;
+    },
+  );
 }
 
 function parseInline(text: string): TipTapNode[] {
   const nodes: TipTapNode[] = [];
   const re =
-    /(\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
+    /(\*\*[^*]+\*\*|(?<![\p{L}\p{N}_])__[^_]+__(?![\p{L}\p{N}_])|\*[^*]+\*|(?<![\p{L}\p{N}_])_[^_]+_(?![\p{L}\p{N}_])|~~[^~]+~~|`[^`]+`|\[[^\]]+\]\([^)]+\))/gu;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
@@ -347,7 +351,9 @@ export function repairTipTapDoc(doc: TipTapDoc): TipTapDoc {
   return { type: "doc", content: next };
 }
 
-function parseCalloutLine(line: string): { variant: string; rest: string } | null {
+function parseCalloutLine(
+  line: string,
+): { variant: string; rest: string } | null {
   const m = line.match(/^>\s*\[!([A-Za-z]+)\]\s*(.*)$/);
   if (!m) return null;
   const raw = m[1].toLowerCase();
@@ -371,9 +377,15 @@ export function parseMarkdown(
   raw: string,
   format: MarkdownFormat = "auto",
 ): ParsedMarkdown {
-  const { frontmatter, body: afterFm } = extractFrontmatter(raw.replace(/^\uFEFF/, ""));
+  const { frontmatter, body: afterFm } = extractFrontmatter(
+    raw.replace(/^\uFEFF/, ""),
+  );
   let detected = format === "auto" ? detectMarkdownFormat(raw) : format;
-  if (format === "auto" && Object.keys(frontmatter).length && detected === "commonmark") {
+  if (
+    format === "auto" &&
+    Object.keys(frontmatter).length &&
+    detected === "commonmark"
+  ) {
     if (/(^|\n)(import\s+|<[A-Z])/.test(afterFm)) detected = "mdx";
   }
 
@@ -401,7 +413,10 @@ export function parseMarkdown(
     }
 
     const calloutStart = parseCalloutLine(line);
-    if (calloutStart && (detected === "obsidian" || detected === "gfm" || detected === "mdx")) {
+    if (
+      calloutStart &&
+      (detected === "obsidian" || detected === "gfm" || detected === "mdx")
+    ) {
       const paras: string[] = [];
       if (calloutStart.rest.trim()) paras.push(calloutStart.rest.trim());
       i += 1;
@@ -461,7 +476,9 @@ export function parseMarkdown(
       continue;
     }
 
-    const imageOnly = line.trim().match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/);
+    const imageOnly = line
+      .trim()
+      .match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/);
     if (imageOnly) {
       content.push({
         type: "image",
@@ -516,7 +533,11 @@ export function parseMarkdown(
 
     if (/^[-*]\s+/.test(line)) {
       const items: TipTapNode[] = [];
-      while (i < lines.length && /^[-*]\s+/.test(lines[i]) && !/^- \[[ xX]\]\s+/.test(lines[i])) {
+      while (
+        i < lines.length &&
+        /^[-*]\s+/.test(lines[i]) &&
+        !/^- \[[ xX]\]\s+/.test(lines[i])
+      ) {
         items.push({
           type: "listItem",
           content: [

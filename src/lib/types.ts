@@ -1,20 +1,9 @@
 export type DocumentKind = "page" | "category" | "link";
 
-export type MarkdownFormat =
-  | "auto"
-  | "commonmark"
-  | "gfm"
-  | "mdx"
-  | "obsidian";
+export type MarkdownFormat = "auto" | "commonmark" | "gfm" | "mdx" | "obsidian";
 
 export type IntegrationProvider =
-  | "github"
-  | "gitlab"
-  | "slack"
-  | "discord"
-  | "openapi"
-  | "webhook"
-  | "notion";
+  "github" | "gitlab" | "slack" | "discord" | "openapi" | "webhook" | "notion";
 
 export type TipTapDoc = {
   type: "doc";
@@ -71,6 +60,7 @@ export type Space = {
 export type PublishedSnapshot = {
   publishedAt: string;
   documents: DocumentRecord[];
+  variables?: Variable[];
 };
 
 export type DocumentRecord = {
@@ -148,6 +138,7 @@ export type Integration = {
 };
 
 export type StoreData = {
+  schemaVersion?: number;
   organization: Organization;
   spaces: Space[];
   documents: DocumentRecord[];
@@ -165,21 +156,35 @@ export const INTEGRATION_CATALOG: {
   provider: IntegrationProvider;
   title: string;
   description: string;
-  fields: { key: string; label: string; secret?: boolean; placeholder?: string }[];
+  fields: {
+    key: string;
+    label: string;
+    secret?: boolean;
+    placeholder?: string;
+  }[];
 }[] = [
   {
     provider: "github",
     title: "GitHub",
     description: "Importer de la doc depuis un dépôt (Markdown / MDX).",
     fields: [
-      { key: "token", label: "Token d’accès (optionnel pour les dépôts publics)", secret: true, placeholder: "ghp_…" },
-      { key: "defaultOwner", label: "Propriétaire / org par défaut", placeholder: "vercel" },
+      {
+        key: "token",
+        label: "Token d’accès (optionnel pour les dépôts publics)",
+        secret: true,
+        placeholder: "ghp_…",
+      },
+      {
+        key: "defaultOwner",
+        label: "Propriétaire / org par défaut",
+        placeholder: "vercel",
+      },
     ],
   },
   {
     provider: "gitlab",
     title: "GitLab",
-    description: "Connecter un token GitLab pour les imports à venir.",
+    description: "Importer des fichiers Markdown depuis un dépôt GitLab.",
     fields: [
       { key: "token", label: "Token d’accès", secret: true },
       { key: "host", label: "Hôte", placeholder: "https://gitlab.com" },
@@ -190,39 +195,52 @@ export const INTEGRATION_CATALOG: {
     title: "Slack",
     description: "Notifier un canal quand un Space est publié.",
     fields: [
-      { key: "webhookUrl", label: "URL du webhook entrant", secret: true, placeholder: "https://hooks.slack.com/…" },
+      {
+        key: "webhookUrl",
+        label: "URL du webhook entrant",
+        secret: true,
+        placeholder: "https://hooks.slack.com/…",
+      },
       { key: "channel", label: "Canal", placeholder: "#docs" },
     ],
   },
   {
     provider: "discord",
     title: "Discord",
-    description: "Envoyer les événements de publication vers un webhook Discord.",
-    fields: [
-      { key: "webhookUrl", label: "URL du webhook", secret: true },
-    ],
+    description:
+      "Envoyer les événements de publication vers un webhook Discord.",
+    fields: [{ key: "webhookUrl", label: "URL du webhook", secret: true }],
   },
   {
     provider: "openapi",
     title: "OpenAPI / Swagger",
     description: "Enregistrer une URL de spec pour générer des pages API.",
     fields: [
-      { key: "specUrl", label: "URL OpenAPI JSON/YAML", placeholder: "https://…/openapi.json" },
+      {
+        key: "specUrl",
+        label: "URL OpenAPI JSON/YAML",
+        placeholder: "https://…/openapi.json",
+      },
     ],
   },
   {
     provider: "webhook",
     title: "Webhook générique",
-    description: "Envoyer les événements (publish, import) en JSON vers votre endpoint.",
+    description:
+      "Envoyer les événements (publish, import) en JSON vers votre endpoint.",
     fields: [
-      { key: "url", label: "URL de l’endpoint", placeholder: "https://api.example.com/hooks/docs" },
+      {
+        key: "url",
+        label: "URL de l’endpoint",
+        placeholder: "https://api.example.com/hooks/docs",
+      },
       { key: "secret", label: "Secret partagé", secret: true },
     ],
   },
   {
     provider: "notion",
     title: "Notion",
-    description: "Enregistrer un token d’intégration pour une sync future.",
+    description: "Importer une page Notion partagée et ses sous-pages.",
     fields: [
       { key: "token", label: "Token d’intégration interne", secret: true },
       { key: "rootPageId", label: "ID de la page racine", placeholder: "uuid" },

@@ -1,3 +1,4 @@
+import { safeFetch } from "./outbound";
 import type { LlmSettings, TipTapDoc } from "./types";
 import { extractText } from "./tiptap-text";
 
@@ -66,8 +67,11 @@ async function callOpenAiCompatible(
   system: string,
   user: string,
 ): Promise<string> {
-  const base = (settings.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "");
-  const res = await fetch(`${base}/chat/completions`, {
+  const base = (settings.baseUrl || "https://api.openai.com/v1").replace(
+    /\/$/,
+    "",
+  );
+  const res = await safeFetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -98,8 +102,11 @@ async function callAnthropic(
   system: string,
   user: string,
 ): Promise<string> {
-  const base = (settings.baseUrl || "https://api.anthropic.com").replace(/\/$/, "");
-  const res = await fetch(`${base}/v1/messages`, {
+  const base = (settings.baseUrl || "https://api.anthropic.com").replace(
+    /\/$/,
+    "",
+  );
+  const res = await safeFetch(`${base}/v1/messages`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -119,7 +126,9 @@ async function callAnthropic(
       String(data.error?.message || data.message || `LLM HTTP ${res.status}`),
     );
   }
-  const text = data.content?.find((c: { type: string }) => c.type === "text")?.text;
+  const text = data.content?.find(
+    (c: { type: string }) => c.type === "text",
+  )?.text;
   if (!text) throw new Error("Réponse LLM vide");
   return String(text).trim();
 }

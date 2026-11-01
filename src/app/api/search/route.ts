@@ -1,7 +1,8 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { searchDocuments } from "@/lib/store";
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q") ?? "";
   const spaceId = searchParams.get("spaceId") ?? undefined;
@@ -9,3 +10,5 @@ export async function GET(request: Request) {
   const results = await searchDocuments(q, { spaceId, publishedOnly });
   return NextResponse.json({ results });
 }
+
+export const GET = secureRoute(handleGET);

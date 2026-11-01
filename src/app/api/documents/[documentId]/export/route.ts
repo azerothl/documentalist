@@ -1,10 +1,11 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { tipTapToMarkdown } from "@/lib/markdown";
 import { getDocument } from "@/lib/store";
 
 type Params = { params: Promise<{ documentId: string }> };
 
-export async function GET(_request: Request, { params }: Params) {
+async function handleGET(_request: Request, { params }: Params) {
   const { documentId } = await params;
   const document = await getDocument(documentId);
   if (!document) {
@@ -18,3 +19,5 @@ export async function GET(_request: Request, { params }: Params) {
     },
   });
 }
+
+export const GET = secureRoute(handleGET);
