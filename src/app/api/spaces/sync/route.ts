@@ -3,10 +3,18 @@ import { secureRoute } from "@/lib/api";
 import { syncSpaceImport } from "@/lib/store";
 
 async function handlePOST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as {
-    spaceId?: string;
-    force?: boolean;
-  };
+  let body: { spaceId?: string; force?: boolean };
+  try {
+    body = (await request.json()) as {
+      spaceId?: string;
+      force?: boolean;
+    };
+  } catch {
+    return NextResponse.json(
+      { error: "Corps JSON invalide." },
+      { status: 400 },
+    );
+  }
   if (!body.spaceId?.trim()) {
     return NextResponse.json({ error: "spaceId required" }, { status: 400 });
   }
