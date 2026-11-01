@@ -1443,6 +1443,22 @@ a {
     text-decoration: underline;
   }
 
+  /* Documentalist logo: dark wordmark, swapped in the dark theme */
+  .brand-logo {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+  }
+  .brand-logo-dark {
+    display: none;
+  }
+  :root[data-theme="dark"] .brand-logo-light {
+    display: none;
+  }
+  :root[data-theme="dark"] .brand-logo-dark {
+    display: block;
+  }
+
   /* Tooltip on form fields */
   .info-tip {
     position: relative;

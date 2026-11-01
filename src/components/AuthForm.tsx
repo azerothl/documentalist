@@ -1,5 +1,6 @@
 "use client";
 import { AppearanceSettings } from "@/components/Appearance";
+import { BrandLogo } from "@/components/BrandLogo";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -9,13 +10,8 @@ export function AuthForm({ setup = false }: { setup?: boolean }) {
   const router = useRouter();
   return (
     <div className="mx-auto w-full max-w-md">
-      <div className="mb-6 flex items-center justify-center gap-3">
-        <span className="site-logo-mark" aria-hidden="true">
-          D
-        </span>
-        <span className="site-brand-name text-[var(--heading)]">
-          Documentalist
-        </span>
+      <div className="mb-6 flex justify-center">
+        <BrandLogo height={44} priority />
       </div>
       <form
         className="card mx-auto flex w-full max-w-md flex-col gap-4"

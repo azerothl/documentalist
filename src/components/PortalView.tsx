@@ -13,6 +13,7 @@ import {
   Search,
 } from "lucide-react";
 import { AppearanceSettings, useAppearance } from "@/components/Appearance";
+import { BrandLogo } from "@/components/BrandLogo";
 import { Dialog } from "@/components/Dialog";
 import {
   AccountNavigation,
@@ -631,7 +632,10 @@ export function PortalView({
               </Link>
             ))}
           </nav>
-          <span>Documentation publiée avec Documentalist</span>
+          <span className="inline-flex items-center gap-2">
+            Documentation publiée avec
+            <BrandLogo height={22} />
+          </span>
         </div>
       </footer>
 

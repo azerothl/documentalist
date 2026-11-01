@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Menu, Plus, FolderPlus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
+import { BrandLogo } from "@/components/BrandLogo";
 import { DocEditor } from "@/components/DocEditor";
 import { DocTree } from "@/components/DocTree";
 import { GitHubImportModal } from "@/components/GitHubImportModal";
@@ -1254,10 +1255,7 @@ export function WorkspaceApp({
             <Menu size={22} aria-hidden="true" />
           </button>
           <Link href="/" className="site-brand">
-            <span className="site-logo-mark" aria-hidden="true">
-              D
-            </span>
-            <span className="site-brand-name">Documentalist</span>
+            <BrandLogo height={30} priority />
           </Link>
           <div className="workspace-context flex min-w-0 flex-wrap items-center gap-2">
             <select

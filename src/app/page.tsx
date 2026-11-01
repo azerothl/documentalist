@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BookOpen, FileText, LayoutPanelLeft, PenLine } from "lucide-react";
 import { AppearanceSettings } from "@/components/Appearance";
+import { BrandLogo } from "@/components/BrandLogo";
 import { listSpaces } from "@/lib/store";
 import { DOC_SECTIONS, docSection } from "@/lib/types";
 
@@ -35,17 +36,14 @@ export default async function HomePage() {
       <header className="site-nav">
         <div className="site-nav-inner mx-auto max-w-6xl">
           <Link href="/" className="site-brand">
-            <span className="site-logo-mark" aria-hidden="true">
-              D
-            </span>
-            <span className="site-brand-name">Documentalist</span>
+            <BrandLogo height={30} priority />
           </Link>
           <div className="ml-auto flex items-center gap-2">
             <AppearanceSettings variant="icon" />
             <Link href="/app" className="site-tab hidden sm:inline-flex">
               Ouvrir l’espace de rédaction
             </Link>
-            <Link href="/app" className="primary-button">
+            <Link href="/app" className="primary-button hidden sm:inline-flex">
               Commencer à écrire
             </Link>
           </div>
@@ -55,16 +53,9 @@ export default async function HomePage() {
       <main id="main-content" tabIndex={-1} className="flex-1">
         <section className="border-b border-[var(--line)] bg-[var(--wash)]">
           <div className="mx-auto flex max-w-3xl flex-col items-center px-6 pb-20 pt-16 text-center md:pt-24">
-            <span
-              className="site-logo-mark"
-              aria-hidden="true"
-              style={{ width: 72, height: 72, fontSize: 36, borderRadius: 20 }}
-            >
-              D
-            </span>
-            <p className="eyebrow mt-8">Portails de documentation</p>
-            <h1 className="page-title mt-3 text-5xl md:text-6xl">
-              Documentalist
+            <p className="eyebrow">Portails de documentation</p>
+            <h1 className="mt-6 flex justify-center">
+              <BrandLogo height={88} priority />
             </h1>
             <p className="page-lead max-w-xl">
               Organisez vos guides, rédigez avec des blocs et publiez un portail
