@@ -24,11 +24,13 @@ function ToolButton({
     <button
       type="button"
       title={title}
+      aria-label={title}
+      aria-pressed={Boolean(active)}
       disabled={disabled}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={[
-        "rounded px-2 py-1 text-xs font-medium disabled:opacity-40",
+        "min-h-9 min-w-9 shrink-0 rounded px-2 py-1 text-sm font-medium disabled:opacity-40",
         active
           ? "bg-[var(--accent-soft)] text-[var(--accent)]"
           : "text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]",
@@ -44,7 +46,11 @@ export function EditorToolbar({ editor, disabled }: Props) {
   const off = Boolean(disabled || !editor.isEditable);
 
   return (
-    <div className="flex items-center gap-0.5 overflow-x-auto border-b border-[var(--line)] bg-[var(--surface)] px-3 py-1.5">
+    <div
+      role="group"
+      aria-label="Mise en forme du document"
+      className="editor-toolbar flex items-center gap-1 overflow-x-auto border-b border-[var(--line)] bg-[var(--surface)] px-3 py-1.5"
+    >
       <ToolButton
         label="B"
         title="Gras"
@@ -75,7 +81,7 @@ export function EditorToolbar({ editor, disabled }: Props) {
       />
       <ToolButton
         label="<>"
-        title="Code inline"
+        title="Code dans le texte"
         disabled={off}
         active={editor.isActive("code")}
         onClick={() => editor.chain().focus().toggleCode().run()}
@@ -179,7 +185,12 @@ export function EditorToolbar({ editor, disabled }: Props) {
         onClick={() => {
           const src = window.prompt("URL de l’image", "https://");
           if (!src) return;
-          editor.chain().focus().setImage({ src }).run();
+          const alt = window.prompt(
+            "Description de l’image (laisser vide si elle est décorative)",
+            "",
+          );
+          if (alt === null) return;
+          editor.chain().focus().setImage({ src, alt }).run();
         }}
       />
       <ToolButton

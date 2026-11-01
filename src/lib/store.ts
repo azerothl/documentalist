@@ -274,10 +274,7 @@ export function resolveLlmSettings(
   const org = data.organization.llm;
   if (!spaceId) return org;
   const space = data.spaces.find((s) => s.id === spaceId);
-  if (
-    space?.llm?.enabled ||
-    (space?.llm?.apiKey && space.llm.apiKey.length > 0)
-  ) {
+  if (space?.llm && (space.llm.enabled || space.llm.provider)) {
     return {
       ...org,
       ...space.llm,

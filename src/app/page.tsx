@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AppearanceSettings } from "@/components/Appearance";
 import { listSpaces } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -10,14 +11,15 @@ export default async function HomePage() {
   const published = spaces.filter((s) => s.publishedSnapshot);
 
   return (
-    <div className="min-h-dvh">
+    <main id="main-content" tabIndex={-1} className="min-h-dvh">
       <div className="landing-grid border-b border-[var(--line)]">
         <div className="mx-auto flex max-w-5xl flex-col gap-8 px-6 pb-16 pt-10">
-          <nav className="flex items-center justify-between">
+          <nav className="flex flex-wrap items-center justify-between gap-4">
             <span className="font-[family-name:var(--font-display)] text-xl tracking-tight">
               Documentalist
             </span>
-            <div className="flex items-center gap-3 text-sm">
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <AppearanceSettings />
               <Link
                 href="/app"
                 className="text-[var(--ink-muted)] hover:text-[var(--ink)]"
@@ -26,7 +28,7 @@ export default async function HomePage() {
               </Link>
               <Link
                 href="/app"
-                className="rounded-md bg-[var(--accent)] px-3 py-1.5 font-medium text-white"
+                className="rounded-md bg-[var(--accent)] px-3 py-1.5 font-medium text-[var(--on-accent)]"
               >
                 Commencer à écrire
               </Link>
@@ -133,6 +135,6 @@ export default async function HomePage() {
           </ul>
         </div>
       </section>
-    </div>
+    </main>
   );
 }

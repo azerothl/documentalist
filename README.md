@@ -49,6 +49,18 @@ Les intégrations sont accessibles aux administrateurs dans Outils → Intégrat
 
 Les lecteurs disposent d’une vue en lecture seule, y compris pour les documents non publiés. Les rédacteurs peuvent modifier et publier tous les espaces. Les administrateurs gèrent aussi les secrets, les accès et les comptes. Les droits sont vérifiés par le serveur, sans dépendre des boutons de l’interface. Les commentaires utilisent le nom du compte connecté.
 
+## Apparence, lecture et navigation
+
+« Apparence et lecture » est accessible à tous les rôles depuis le compte et depuis les portails. Trois thèmes sont proposés : Clair — Papier, Sombre — Graphite et Contraste renforcé. Le mode Système suit automatiquement le réglage de l’appareil. Le texte peut être affiché à 16, 18 ou 20 px, avec une largeur confortable ou large. Le mode lecture masque les outils de rédaction ; « Revenir à la rédaction » permet de les retrouver. Les préférences sont conservées dans le navigateur, indépendamment des réglages de l’espace.
+
+Sur mobile, « Documents » ouvre la navigation et la recherche ; « Panneau de page » donne accès au sommaire, aux commentaires, au SEO et à l’IA. Les fenêtres se ferment avec Échap et conservent le focus au clavier. « Plus → Déplacer… » permet de classer les pages sans glisser-déposer. Les liens de l’espace de rédaction conservent l’espace, la langue et le document ; la vue Lecteur utilise la même navigation documentaire que le portail, en conservant ses droits de consultation interne.
+
+Sur ordinateur, le nom de l’application, les sélecteurs et le compte partagent la même ligne. La barre se replie sur les petits écrans. Le titre de la fenêtre suit la page active ; les tâches publiées exposent leur libellé et leur état coché avec des cases natives en lecture seule.
+
+Les couleurs personnalisées d’un espace sont ajustées à l’affichage pour maintenir un contraste lisible dans chaque thème. Les encadrés publiés conservent leurs intitulés Information, Attention et Succès. Les contrôles automatisés du navigateur couvrent notamment les thèmes avec axe, les dialogues au clavier, le repli à 320 px et la navigation en lecture seule. Ils ne remplacent pas une qualification complète avec des lecteurs d’écran et des appareils réels.
+
+Un parcours ciblé a également été vérifié le 1er novembre 2026 avec NVDA 2026.3 et Microsoft Edge sous Windows : 21 étapes couvrant l’éditeur, les préférences, le focus, la recherche, les onglets, les commentaires et la lecture du portail. Les libellés des tâches ont été associés par des éléments `label` natifs pour éviter leur répétition en lecture continue ; les liens de page précédente et suivante disposent d’un nom explicite. Le menu documentaire a aussi été vérifié avec une fenêtre de 390 px de large sur ordinateur.
+
 ## Données et sauvegardes
 
 Au premier accès, l’ancien `data/store.json` est migré sans réinitialisation silencieuse : son contenu est conservé dans `legacy-backup.enc`, puis le fichier en clair est retiré. Un fichier invalide provoque une erreur explicite.

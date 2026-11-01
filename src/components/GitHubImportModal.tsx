@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Dialog } from "@/components/Dialog";
 import type { MarkdownFormat, Space } from "@/lib/types";
 
 type Props = {
@@ -10,7 +11,7 @@ type Props = {
 };
 
 const FORMATS: { id: MarkdownFormat; label: string }[] = [
-  { id: "auto", label: "Auto-detect" },
+  { id: "auto", label: "Auto-détection" },
   { id: "commonmark", label: "CommonMark" },
   { id: "gfm", label: "GitHub Flavored (GFM)" },
   { id: "mdx", label: "MDX" },
@@ -59,18 +60,12 @@ export function GitHubImportModal({ open, onClose, onImported }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <form
-        onSubmit={(e) => void submit(e)}
-        className="w-full max-w-lg rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5"
-      >
-        <h2 className="font-[family-name:var(--font-display)] text-xl">
-          Créer une doc depuis GitHub
-        </h2>
+    <Dialog open={open} onClose={onClose} title="Importer depuis GitHub">
+      <form onSubmit={(e) => void submit(e)} className="w-full">
         <p className="mt-1 text-sm text-[var(--ink-muted)]">
-          Importe les fichiers Markdown/MDX dans un nouveau Space (les dossiers
-          deviennent des catégories). Repos publics : sans token. Privés : PAT
-          requis.
+          Importe les fichiers Markdown/MDX dans un nouvel espace (les dossiers
+          deviennent des catégories). Dépôts publics : sans jeton. Dépôts privés
+          : jeton d’accès requis.
         </p>
         <div className="mt-4 flex flex-col gap-3 text-sm">
           <label>
@@ -126,7 +121,7 @@ export function GitHubImportModal({ open, onClose, onImported }: Props) {
               />
             </label>
             <label>
-              Token (optionnel)
+              Jeton d’accès (facultatif)
               <input
                 type="password"
                 value={token}
@@ -138,7 +133,9 @@ export function GitHubImportModal({ open, onClose, onImported }: Props) {
           </div>
         </div>
         {error ? (
-          <p className="mt-3 text-sm text-[#A32D2D]">{error}</p>
+          <p role="alert" className="mt-3 text-sm text-[var(--danger)]">
+            {error}
+          </p>
         ) : null}
         <div className="mt-4 flex justify-end gap-2">
           <button
@@ -151,12 +148,12 @@ export function GitHubImportModal({ open, onClose, onImported }: Props) {
           <button
             type="submit"
             disabled={busy}
-            className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-[var(--on-accent)] disabled:opacity-50"
           >
             {busy ? "Import…" : "Importer le dépôt"}
           </button>
         </div>
       </form>
-    </div>
+    </Dialog>
   );
 }

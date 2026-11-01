@@ -5,7 +5,7 @@ import type { LlmSettings, StoreData } from "./types";
 
 const DEFAULT_LLM: LlmSettings = {
   enabled: false,
-  provider: "compatible",
+  provider: "openai",
   apiKey: "",
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-4o-mini",

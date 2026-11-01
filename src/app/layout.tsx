@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Fraunces, Source_Sans_3, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+import { AppearanceProvider } from "@/components/Appearance";
+import { appearanceBootstrap } from "@/lib/appearance";
 
 const display = Fraunces({
   variable: "--font-display",
@@ -19,9 +21,9 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Documentalist — knowledge portals",
+  title: "Documentalist — documentation",
   description:
-    "Spaces, nested docs, slash-block editing, and publishable portals — an Archbee-inspired local docs platform.",
+    "Organisez, rédigez et consultez votre documentation dans des espaces et des portails accessibles.",
 };
 
 export default function RootLayout({
@@ -30,11 +32,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr">
+    <html lang="fr" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: appearanceBootstrap }} />
+      </head>
       <body
         className={`${display.variable} ${body.variable} ${mono.variable} antialiased`}
       >
-        {children}
+        <AppearanceProvider>
+          <a className="skip-link" href="#main-content">
+            Aller au contenu
+          </a>
+          {children}
+        </AppearanceProvider>
       </body>
     </html>
   );

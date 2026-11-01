@@ -1,5 +1,6 @@
 import type { TipTapDoc, TipTapNode } from "@/lib/types";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
+import { extractText } from "@/lib/tiptap-text";
 
 const safeUrl = (value: unknown, image = false) =>
   typeof value === "string" &&
@@ -7,9 +8,12 @@ const safeUrl = (value: unknown, image = false) =>
     ? value
     : undefined;
 export function DocumentContent({ content }: { content: TipTapDoc }) {
+  const id = useId();
   let heading = 0;
+  let task = 0;
   function render(node: TipTapNode, key: number): ReactNode {
-    const children = node.content?.map(render);
+    const children =
+      node.type === "taskItem" ? null : node.content?.map(render);
     switch (node.type) {
       case "text": {
         let text: ReactNode = node.text ?? "";
@@ -56,7 +60,7 @@ export function DocumentContent({ content }: { content: TipTapDoc }) {
         return <blockquote key={key}>{children}</blockquote>;
       case "codeBlock":
         return (
-          <pre key={key}>
+          <pre key={key} tabIndex={0} aria-label="Bloc de code">
             <code>{children}</code>
           </pre>
         );
@@ -77,7 +81,13 @@ export function DocumentContent({ content }: { content: TipTapDoc }) {
         ) : null;
       case "table":
         return (
-          <div key={key} className="overflow-x-auto">
+          <div
+            key={key}
+            className="overflow-x-auto"
+            tabIndex={0}
+            role="region"
+            aria-label="Tableau du document"
+          >
             <table>
               <tbody>{children}</tbody>
             </table>
@@ -95,21 +105,72 @@ export function DocumentContent({ content }: { content: TipTapDoc }) {
             {children}
           </ul>
         );
-      case "taskItem":
+      case "taskItem": {
+        const inputId = `${id}-task-${task++}`;
+        const [first, ...rest] = node.content ?? [];
+        const hasLabel = first?.type === "paragraph";
         return (
           <li key={key}>
-            <span aria-label={node.attrs?.checked ? "Terminé" : "À faire"}>
-              {node.attrs?.checked ? "☑" : "☐"}
-            </span>
-            <div>{children}</div>
+            <input
+              id={inputId}
+              type="checkbox"
+              checked={Boolean(node.attrs?.checked)}
+              disabled
+              aria-label={
+                hasLabel &&
+                extractText({ type: "doc", content: [first] }).trim()
+                  ? undefined
+                  : "Tâche"
+              }
+              className="mt-1 h-4 w-4 shrink-0"
+            />
+            <div>
+              {hasLabel ? (
+                <>
+                  <p>
+                    <label htmlFor={inputId}>
+                      {first.content?.map(render)}
+                    </label>
+                  </p>
+                  {rest.map(render)}
+                </>
+              ) : (
+                node.content?.map(render)
+              )}
+            </div>
           </li>
         );
-      case "callout":
+      }
+      case "callout": {
+        const variant = ["warning", "success"].includes(
+          String(node.attrs?.variant),
+        )
+          ? String(node.attrs?.variant)
+          : "info";
         return (
-          <aside key={key} className="doc-callout">
-            {children}
+          <aside
+            key={key}
+            role="note"
+            aria-label={
+              variant === "warning"
+                ? "Attention"
+                : variant === "success"
+                  ? "Succès"
+                  : "Information"
+            }
+            className={`doc-callout doc-callout--${variant}`}
+          >
+            <p lang="fr" className="doc-callout-label">
+              {variant === "warning"
+                ? "Attention"
+                : variant === "success"
+                  ? "Succès"
+                  : "Information"}
+            </p>
+            <div>{children}</div>
           </aside>
         );
+      }
       default:
         return <div key={key}>{children}</div>;
     }

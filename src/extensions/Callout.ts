@@ -27,7 +27,13 @@ export const Callout = Node.create({
   },
 
   parseHTML() {
-    return [{ tag: 'aside[data-type="callout"]' }];
+    return [
+      {
+        tag: 'aside[data-type="callout"]',
+        contentElement: (element) =>
+          element.querySelector("[data-callout-content]") ?? element,
+      },
+    ];
   },
 
   renderHTML({ HTMLAttributes }) {
@@ -37,9 +43,19 @@ export const Callout = Node.create({
       mergeAttributes(HTMLAttributes, {
         "data-type": "callout",
         "data-variant": variant,
+        role: "note",
         class: `doc-callout doc-callout--${variant}`,
       }),
-      0,
+      [
+        "p",
+        { class: "doc-callout-label", contenteditable: "false" },
+        variant === "warning"
+          ? "Attention"
+          : variant === "success"
+            ? "Succès"
+            : "Information",
+      ],
+      ["div", { "data-callout-content": "" }, 0],
     ];
   },
 
