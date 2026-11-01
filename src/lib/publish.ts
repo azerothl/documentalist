@@ -18,6 +18,8 @@ export function hasUnpublishedChanges(
       doc.title !== prev.title ||
       doc.slug !== prev.slug ||
       doc.kind !== prev.kind ||
+      doc.href !== prev.href ||
+      doc.locale !== prev.locale ||
       doc.hidden !== prev.hidden ||
       doc.parentId !== prev.parentId ||
       doc.position !== prev.position ||

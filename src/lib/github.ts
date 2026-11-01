@@ -1,3 +1,4 @@
+import { safeFetch } from "./outbound";
 export type GithubFile = {
   path: string;
   content: string;
@@ -16,17 +17,14 @@ function parseRepo(input: string): { owner: string; repo: string } {
   return { owner, repo };
 }
 
-async function ghFetch(
-  url: string,
-  token?: string | null,
-): Promise<Response> {
+async function ghFetch(url: string, token?: string | null): Promise<Response> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "User-Agent": "documentalist",
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch(url, { headers, next: { revalidate: 0 } });
+  return safeFetch(url, { headers });
 }
 
 export async function listMarkdownFiles(options: {
@@ -94,9 +92,10 @@ export async function fetchGithubMarkdownFiles(options: {
     if (!res.ok) continue;
     const json = (await res.json()) as { content?: string; encoding?: string };
     if (!json.content || json.encoding !== "base64") continue;
-    const content = Buffer.from(json.content.replace(/\n/g, ""), "base64").toString(
-      "utf8",
-    );
+    const content = Buffer.from(
+      json.content.replace(/\n/g, ""),
+      "base64",
+    ).toString("utf8");
     files.push({ path, content });
   }
 

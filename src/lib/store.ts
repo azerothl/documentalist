@@ -8,6 +8,14 @@ import { migrateStore } from "./migrate";
 import { createSeedStore } from "./seed";
 import { uniqueSlug, slugify } from "./slug";
 import { emptyDoc } from "./tiptap-text";
+import { database, encrypt, decrypt, dataDirectory } from "./database";
+import { hashPassword } from "./auth";
+import { SECRET_MASK, mergeSecrets } from "./secrets";
+import {
+  spacePatchSchema,
+  documentPatchSchema,
+  validateDocumentTree,
+} from "./validation";
 import type {
   Comment,
   DocumentKind,
@@ -26,36 +34,87 @@ import type {
   Variable,
 } from "./types";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = dataDirectory;
 const STORE_PATH = path.join(DATA_DIR, "store.json");
 
-let writeChain: Promise<void> = Promise.resolve();
+const shared = globalThis as typeof globalThis & {
+  documentalistWrites?: Promise<void>;
+};
+const revisions = new WeakMap<StoreData, number>();
 
 async function ensureStore(): Promise<StoreData> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    const raw = await fs.readFile(STORE_PATH, "utf8");
-    return migrateStore(JSON.parse(raw) as StoreData);
-  } catch {
-    const seed = createSeedStore();
-    await fs.writeFile(STORE_PATH, JSON.stringify(seed, null, 2), "utf8");
-    return seed;
+  const db = database();
+  let row = db
+    .prepare("SELECT revision,payload FROM state WHERE id=1")
+    .get() as { revision: number; payload: string } | undefined;
+  if (!row) {
+    let legacy: string | undefined;
+    try {
+      legacy = await fs.readFile(STORE_PATH, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    // A corrupt legacy file is reported; it is never silently replaced by demo data.
+    const initial = legacy
+      ? (JSON.parse(legacy) as StoreData)
+      : createSeedStore();
+    migrateStore(initial);
+    for (const s of initial.spaces)
+      if (s.accessPassword && !s.accessPassword.startsWith("scrypt:"))
+        s.accessPassword = hashPassword(s.accessPassword);
+    const payload = encrypt(JSON.stringify(initial));
+    db.prepare("INSERT OR IGNORE INTO state VALUES (1,0,?)").run(payload);
+    if (legacy) {
+      await fs.writeFile(
+        path.join(DATA_DIR, "legacy-backup.enc"),
+        encrypt(legacy),
+        { mode: 0o600 },
+      );
+      await fs.unlink(STORE_PATH).catch((error) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    }
+    row = db.prepare("SELECT revision,payload FROM state WHERE id=1").get() as {
+      revision: number;
+      payload: string;
+    };
   }
+  const data = JSON.parse(decrypt(row.payload)) as StoreData;
+  revisions.set(data, row.revision);
+  return data;
 }
 
 async function persist(data: StoreData): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  const payload = JSON.stringify(data, null, 2);
-  // Direct write avoids Windows rename races when multiple requests migrate.
-  await fs.writeFile(STORE_PATH, payload, "utf8");
+  validateDocumentTree(data.documents, data.spaces);
+  const db = database();
+  const version = revisions.get(data);
+  db.transaction(() => {
+    const row = db
+      .prepare("SELECT revision,payload FROM state WHERE id=1")
+      .get() as { revision: number; payload: string };
+    if (version !== row.revision)
+      throw new Error("Conflit d’écriture : rechargez avant de réessayer.");
+    db.prepare(
+      "INSERT OR IGNORE INTO state_backups(revision,payload) VALUES (?,?)",
+    ).run(row.revision, row.payload);
+    db.prepare("UPDATE state SET payload=?,revision=revision+1 WHERE id=1").run(
+      encrypt(JSON.stringify(data)),
+    );
+    db.prepare("DELETE FROM state_backups WHERE revision < ?").run(
+      row.revision - 19,
+    );
+  })();
+  revisions.set(data, (version ?? 0) + 1);
 }
 
 function enqueue<T>(fn: (data: StoreData) => Promise<T> | T): Promise<T> {
-  const run = writeChain.then(async () => {
-    const data = await ensureStore();
-    return fn(data);
-  });
-  writeChain = run.then(
+  const run = (shared.documentalistWrites ?? Promise.resolve()).then(
+    async () => {
+      const data = await ensureStore();
+      return fn(data);
+    },
+  );
+  shared.documentalistWrites = run.then(
     () => undefined,
     () => undefined,
   );
@@ -126,9 +185,8 @@ export async function createSpace(input: {
       slug,
       description: input.description ?? "",
       defaultLocale: locale,
-      locales: input.locales ?? [locale, "fr"].filter(
-        (v, i, a) => a.indexOf(v) === i,
-      ),
+      locales:
+        input.locales ?? [locale, "fr"].filter((v, i, a) => a.indexOf(v) === i),
     });
     data.spaces.push(space);
     data.documents.push({
@@ -179,6 +237,12 @@ export async function updateSpace(
     const space = data.spaces.find((s) => s.id === id);
     if (!space) return undefined;
     migrateStore(data);
+    patch = spacePatchSchema.parse(patch);
+    if (patch.accessPassword === SECRET_MASK) delete patch.accessPassword;
+    else if (patch.accessPassword)
+      patch.accessPassword = hashPassword(patch.accessPassword);
+    if (patch.llm)
+      patch.llm = mergeSecrets(space.llm ?? data.organization.llm, patch.llm);
     Object.assign(space, patch);
     if (patch.defaultLocale && !space.locales.includes(patch.defaultLocale)) {
       space.locales = [...space.locales, patch.defaultLocale];
@@ -195,19 +259,25 @@ export async function updateOrganization(
     migrateStore(data);
     if (patch.name !== undefined) data.organization.name = patch.name;
     if (patch.llm !== undefined) {
-      data.organization.llm = { ...data.organization.llm, ...patch.llm };
+      data.organization.llm = mergeSecrets(data.organization.llm, patch.llm);
     }
     await persist(data);
     return structuredClone(data.organization);
   });
 }
 
-export function resolveLlmSettings(data: StoreData, spaceId?: string): LlmSettings {
+export function resolveLlmSettings(
+  data: StoreData,
+  spaceId?: string,
+): LlmSettings {
   migrateStore(data);
   const org = data.organization.llm;
   if (!spaceId) return org;
   const space = data.spaces.find((s) => s.id === spaceId);
-  if (space?.llm?.enabled || (space?.llm?.apiKey && space.llm.apiKey.length > 0)) {
+  if (
+    space?.llm?.enabled ||
+    (space?.llm?.apiKey && space.llm.apiKey.length > 0)
+  ) {
     return {
       ...org,
       ...space.llm,
@@ -217,12 +287,16 @@ export function resolveLlmSettings(data: StoreData, spaceId?: string): LlmSettin
   return org;
 }
 
-export async function listDocuments(spaceId: string): Promise<DocumentRecord[]> {
+export async function listDocuments(
+  spaceId: string,
+): Promise<DocumentRecord[]> {
   const data = await readStore();
   return data.documents.filter((d) => d.spaceId === spaceId);
 }
 
-export async function getDocument(id: string): Promise<DocumentRecord | undefined> {
+export async function getDocument(
+  id: string,
+): Promise<DocumentRecord | undefined> {
   const data = await readStore();
   return data.documents.find((d) => d.id === id);
 }
@@ -306,12 +380,20 @@ export async function updateDocument(
       | "seoDescription"
     >
   >,
-  options?: { revision?: boolean },
+  options?: { revision?: boolean; expectedUpdatedAt?: string },
 ): Promise<DocumentRecord | undefined> {
   return enqueue(async (data) => {
     migrateStore(data);
     const doc = data.documents.find((d) => d.id === id);
     if (!doc) return undefined;
+    if (
+      options?.expectedUpdatedAt &&
+      options.expectedUpdatedAt !== doc.updatedAt
+    )
+      throw new Error(
+        "Conflit : ce document a été modifié par une autre personne. Rechargez-le avant de réessayer.",
+      );
+    patch = documentPatchSchema.parse(patch);
 
     if (options?.revision && patch.content) {
       const rev: Revision = {
@@ -331,7 +413,9 @@ export async function updateDocument(
 
     Object.assign(doc, patch);
     if (!Array.isArray(doc.tags)) doc.tags = [];
-    doc.updatedAt = new Date().toISOString();
+    doc.updatedAt = new Date(
+      Math.max(Date.now(), Date.parse(doc.updatedAt) + 1),
+    ).toISOString();
     await persist(data);
     return structuredClone(doc);
   });
@@ -354,9 +438,7 @@ export async function reorderDocuments(
       doc.updatedAt = new Date().toISOString();
     });
     await persist(data);
-    return structuredClone(
-      data.documents.filter((d) => d.spaceId === spaceId),
-    );
+    return structuredClone(data.documents.filter((d) => d.spaceId === spaceId));
   });
 }
 
@@ -373,9 +455,7 @@ export async function deleteDocument(id: string): Promise<boolean> {
     collect(id);
     data.documents = data.documents.filter((d) => !ids.has(d.id));
     data.revisions = data.revisions.filter((r) => !ids.has(r.documentId));
-    data.comments = (data.comments ?? []).filter(
-      (c) => !ids.has(c.documentId),
-    );
+    data.comments = (data.comments ?? []).filter((c) => !ids.has(c.documentId));
     await persist(data);
     return true;
   });
@@ -453,9 +533,9 @@ export async function createSpaceVersion(
         ...structuredClone(doc),
         id: idMap.get(doc.id)!,
         spaceId: clone.id,
-        parentId: doc.parentId ? idMap.get(doc.parentId) ?? null : null,
+        parentId: doc.parentId ? (idMap.get(doc.parentId) ?? null) : null,
         translationOf: doc.translationOf
-          ? idMap.get(doc.translationOf) ?? null
+          ? (idMap.get(doc.translationOf) ?? null)
           : null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -491,15 +571,27 @@ export async function createTranslation(
     if (existing) return structuredClone(existing);
 
     const rootId = source.translationOf ?? source.id;
+    const sourceParent = data.documents.find((d) => d.id === source.parentId);
+    const parentRoot = sourceParent?.translationOf ?? sourceParent?.id;
+    const translatedParent = parentRoot
+      ? data.documents.find(
+          (d) =>
+            d.spaceId === source.spaceId &&
+            d.locale === locale &&
+            (d.id === parentRoot || d.translationOf === parentRoot),
+        )
+      : undefined;
+    const parentId = translatedParent?.id ?? null;
     const siblings = data.documents.filter(
       (d) =>
         d.spaceId === source.spaceId &&
-        d.parentId === source.parentId &&
+        d.parentId === parentId &&
         d.locale === locale,
     );
     const doc: DocumentRecord = {
       ...structuredClone(source),
       id: `doc_${nanoid(8)}`,
+      parentId,
       locale,
       translationOf: rootId,
       title: `${source.title} (${locale})`,
@@ -532,12 +624,14 @@ export async function publishSpace(
     space.publishedSnapshot = {
       publishedAt,
       documents: structuredClone(docs),
+      variables: structuredClone(data.variables),
     };
     await persist(data);
 
     const portalUrl =
-      portalBaseUrl ?? `http://localhost:3000/p/${space.slug}`;
-    void dispatchPublishHooks(data.integrations, space, portalUrl);
+      portalBaseUrl ??
+      `${process.env.DOCUMENTALIST_URL || "http://localhost:3000"}/p/${space.slug}`;
+    await dispatchPublishHooks(data.integrations, space, portalUrl);
 
     return structuredClone(space);
   });
@@ -600,7 +694,7 @@ export async function upsertIntegration(input: {
       if (existing) {
         existing.name = input.name;
         existing.enabled = input.enabled ?? existing.enabled;
-        existing.config = { ...existing.config, ...input.config };
+        existing.config = mergeSecrets(existing.config, input.config);
         await persist(data);
         return structuredClone(existing);
       }
@@ -642,6 +736,8 @@ export async function addComment(input: {
 }): Promise<Comment> {
   return enqueue(async (data) => {
     migrateStore(data);
+    if (!data.documents.some((d) => d.id === input.documentId))
+      throw new Error("Document introuvable.");
     const comment: Comment = {
       id: `cmt_${nanoid(8)}`,
       documentId: input.documentId,
@@ -687,12 +783,28 @@ export async function importGithubRepo(input: {
     token: input.token,
   });
 
+  return importRepositoryFiles({ ...input, provider: "github" }, github);
+}
+
+export async function importRepositoryFiles(
+  input: {
+    path?: string;
+    spaceName?: string;
+    locale?: string;
+    format?: MarkdownFormat;
+    provider: string;
+  },
+  github: {
+    owner: string;
+    repo: string;
+    branch: string;
+    files: { path: string; content: string }[];
+  },
+) {
   return enqueue(async (data) => {
     migrateStore(data);
     const id = `spc_${nanoid(8)}`;
-    const name =
-      input.spaceName?.trim() ||
-      `${github.owner}/${github.repo}`;
+    const name = input.spaceName?.trim() || `${github.owner}/${github.repo}`;
     const slug = uniqueSlug(
       name,
       data.spaces.map((s) => s.slug),
@@ -703,7 +815,7 @@ export async function importGithubRepo(input: {
       orgId: data.organization.id,
       name,
       slug,
-      description: `Imported from GitHub ${github.owner}/${github.repo}@${github.branch}`,
+      description: `Import ${input.provider} : ${github.owner}/${github.repo}@${github.branch}`,
       defaultLocale: locale,
       locales: [locale, "fr"].filter((v, i, a) => a.indexOf(v) === i),
     });
@@ -749,7 +861,7 @@ export async function importGithubRepo(input: {
         content: emptyDoc(),
         position: siblings.length,
         hidden: false,
-        tags: ["github"],
+        tags: [input.provider],
         locale,
         translationOf: null,
         sourcePath: dirPath,
@@ -784,7 +896,7 @@ export async function importGithubRepo(input: {
         );
         const tags = parsed.frontmatter.tags
           ? parsed.frontmatter.tags.split(/[,\s]+/).filter(Boolean)
-          : ["github"];
+          : [input.provider];
         data.documents.push({
           id: `doc_${nanoid(8)}`,
           spaceId: space.id,
@@ -842,7 +954,9 @@ export async function importGithubRepo(input: {
       });
     }
 
-    const ghIntegration = data.integrations.find((i) => i.provider === "github");
+    const ghIntegration = data.integrations.find(
+      (i) => i.provider === input.provider,
+    );
     if (ghIntegration) {
       ghIntegration.lastSyncAt = new Date().toISOString();
     }
@@ -905,9 +1019,7 @@ export async function importOpenApiIntegration(
 export async function searchDocuments(
   query: string,
   options?: { spaceId?: string; publishedOnly?: boolean; locale?: string },
-): Promise<
-  { document: DocumentRecord; space: Space; snippet: string }[]
-> {
+): Promise<{ document: DocumentRecord; space: Space; snippet: string }[]> {
   const data = await readStore();
   const q = query.trim().toLowerCase();
   if (!q) return [];
@@ -946,11 +1058,12 @@ export async function saveDocumentContent(
   id: string,
   content: TipTapDoc,
   title?: string,
+  expectedUpdatedAt?: string,
 ): Promise<DocumentRecord | undefined> {
   return updateDocument(
     id,
     { content, ...(title !== undefined ? { title } : {}) },
-    { revision: true },
+    { revision: true, expectedUpdatedAt },
   );
 }
 

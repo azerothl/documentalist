@@ -1,3 +1,4 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import {
   deleteIntegration,
@@ -6,12 +7,12 @@ import {
 } from "@/lib/store";
 import type { IntegrationProvider } from "@/lib/types";
 
-export async function GET() {
+async function handleGET() {
   const integrations = await listIntegrations();
   return NextResponse.json({ integrations });
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const body = (await request.json()) as {
     id?: string;
     provider?: IntegrationProvider;
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ integration }, { status: 201 });
 }
 
-export async function DELETE(request: Request) {
+async function handleDELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) {
@@ -47,3 +48,9 @@ export async function DELETE(request: Request) {
   }
   return NextResponse.json({ ok: true });
 }
+
+export const GET = secureRoute(handleGET);
+
+export const POST = secureRoute(handlePOST);
+
+export const DELETE = secureRoute(handleDELETE);

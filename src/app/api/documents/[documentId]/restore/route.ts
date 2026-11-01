@@ -1,9 +1,10 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { restoreRevision } from "@/lib/store";
 
 type Params = { params: Promise<{ documentId: string }> };
 
-export async function POST(request: Request, { params }: Params) {
+async function handlePOST(request: Request, { params }: Params) {
   const { documentId } = await params;
   const body = (await request.json()) as { revisionId?: string };
   if (!body.revisionId) {
@@ -15,3 +16,5 @@ export async function POST(request: Request, { params }: Params) {
   }
   return NextResponse.json({ document });
 }
+
+export const POST = secureRoute(handlePOST);

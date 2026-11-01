@@ -1,3 +1,4 @@
+import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import {
   buildAiSystemPrompt,
@@ -6,9 +7,14 @@ import {
   docToPlainText,
   type AiAction,
 } from "@/lib/llm";
-import { getDocument, getSpace, readStore, resolveLlmSettings } from "@/lib/store";
+import {
+  getDocument,
+  getSpace,
+  readStore,
+  resolveLlmSettings,
+} from "@/lib/store";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const body = await request.json();
   const action = body.action as AiAction;
   const prompt = String(body.prompt ?? "").trim();
@@ -49,3 +55,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export const POST = secureRoute(handlePOST);
