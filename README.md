@@ -16,7 +16,7 @@ Ouvrir [le compte initial](http://localhost:3000/setup). Le code d’installatio
 - `/login` : connexion, session de 8 heures ;
 - `/app` : rédaction et consultation ;
 - `/team` : comptes, rôles, activité et sauvegardes ;
-- `/p/{slug}` : portail publié, avec choix de version et de langue.
+- `/p/{slug}` : portail publié, avec les onglets Learn, Reference et Blog (`/p/{slug}/learn/…`, `/p/{slug}/reference/…`, `/p/{slug}/blog/…`), et le choix de version et de langue. Les anciens liens sans onglet ouvrent toujours la page dans Reference.
 
 Pour les réglages d’hébergement, partir de [.env.example](.env.example). `DOCUMENTALIST_URL` doit correspondre à l’URL réellement ouverte par les utilisateurs. En production, utiliser HTTPS ; pour un serveur de production **local sur HTTP**, définir explicitement `DOCUMENTALIST_COOKIE_SECURE=false`.
 
@@ -35,11 +35,11 @@ La compilation utilise webpack et un correctif ciblé pour les volumes Windows q
 | Édition                 | Blocs `/`, tableaux, tâches, images par URL, encadrés, coloration du code et aperçu                                                    |
 | Sauvegarde              | File de sauvegarde par document, attente avant publication, alerte si la page est quittée avant enregistrement, révisions restaurables |
 | Publication             | Instantané des documents et variables, pages masquées exclues côté serveur, retrait possible via le réglage Public                     |
-| Portail                 | Lecture sans charger TipTap, sommaire avec ancres, recherche avec état vide, menu mobile, versions et langues                          |
+| Portail                 | Onglets Learn, Reference et Blog, lecture sans charger TipTap, sommaire qui suit la lecture, recherche (Ctrl K), menu mobile, versions et langues |
 | Accès                   | Administrateur, rédacteur et lecteur ; mot de passe de portail vérifié côté serveur avec cookie HttpOnly                               |
 | IA                      | Question, rédaction et correction sur le contexte de la page avec OpenAI, Anthropic ou une API compatible                              |
 | Import/export           | Markdown ; adaptation GFM, Obsidian et MDX sans exécuter de JavaScript                                                                 |
-| GitHub                  | Import d’un arbre Markdown/MDX (ordre SUMMARY → liens README → frontmatter → préfixe), sync manuelle ou automatique, token facultatif  |
+| GitHub                  | Import d’un arbre Markdown/MDX par onglet : dossier docs → Reference, dossier Learn, dossier Blog (notes de version datées). Ordre SUMMARY → liens README → frontmatter → préfixe, sync manuelle ou automatique, token facultatif |
 | GitLab                  | Import d’un arbre Markdown/MDX dans un nouvel espace, sync manuelle ou automatique, hôte et token configurables                        |
 | Notion                  | Import de la page partagée et sous-pages, sync manuelle ou automatique ; blocs non convertis signalés                                 |
 | OpenAPI                 | JSON ou YAML : paramètres, corps de requête, réponses, schémas locaux et sécurité                                                      |
@@ -49,9 +49,21 @@ Les intégrations sont accessibles aux administrateurs dans Outils → Intégrat
 
 Les lecteurs disposent d’une vue en lecture seule, y compris pour les documents non publiés. Les rédacteurs peuvent modifier et publier tous les espaces. Les administrateurs gèrent aussi les secrets, les accès et les comptes. Les droits sont vérifiés par le serveur, sans dépendre des boutons de l’interface. Les commentaires utilisent le nom du compte connecté.
 
+## Onglets Learn, Reference et Blog
+
+Le portail reprend la structure de react.dev : une barre du haut avec la recherche et les onglets, la navigation de l’onglet à gauche, la page au centre et « Sur cette page » à droite.
+
+- **Reference** : documentation de référence. Les documents créés avant les onglets y restent.
+- **Learn** : guides, tutoriels et parcours e-learning.
+- **Blog** : notes de version. L’accueil du blog liste les articles du plus récent au plus ancien ; chaque article affiche sa date de publication.
+
+Dans « Importer depuis GitHub », le champ « Dossier docs » alimente Reference. Les champs facultatifs « Dossier Learn » et « Dossier Blog » alimentent les deux autres onglets ; une bulle d’aide (ⓘ) explique chaque champ. Les trois dossiers doivent être différents ; si l’un est inclus dans un autre (`docs` et `docs/learn`), chaque fichier va dans le dossier le plus précis. Les notes de version forment une liste à plat, datée par le champ `date` du frontmatter ou par une date dans le chemin (`2026/10/01/…` ou `2026-10-01-…`). Un `index.md` ou `README.md` sans date à la racine du blog sert d’introduction.
+
+Dans l’espace de rédaction, les onglets filtrent l’arborescence ; une page créée va dans l’onglet ouvert, une sous-page suit l’onglet de son parent. « Plus → Déplacer vers l’onglet … » change l’onglet d’une page et de ses sous-pages. Les articles du blog ont un champ « Date de publication ».
+
 ## Apparence, lecture et navigation
 
-« Apparence et lecture » est accessible à tous les rôles depuis le compte et depuis les portails. Trois thèmes sont proposés : Clair — Papier, Sombre — Graphite et Contraste renforcé. Le mode Système suit automatiquement le réglage de l’appareil. Le texte peut être affiché à 16, 18 ou 20 px, avec une largeur confortable ou large. Le mode lecture masque les outils de rédaction ; « Revenir à la rédaction » permet de les retrouver. Les préférences sont conservées dans le navigateur, indépendamment des réglages de l’espace.
+« Apparence et lecture » est accessible à tous les rôles depuis le compte et depuis les portails. Trois thèmes sont proposés : Clair, Sombre — Nuit et Contraste renforcé, aux couleurs de la charte FASST (bleu #1F425B, accent ocre #C76A55, titres en Barlow, texte en DM Sans). Le mode Système suit automatiquement le réglage de l’appareil. Le texte peut être affiché à 16, 18 ou 20 px, avec une largeur confortable ou large. Le mode lecture masque les outils de rédaction ; « Revenir à la rédaction » permet de les retrouver. Les préférences sont conservées dans le navigateur, indépendamment des réglages de l’espace.
 
 Sur mobile, « Documents » ouvre la navigation et la recherche ; « Panneau de page » donne accès au sommaire, aux commentaires, au SEO et à l’IA. Les fenêtres se ferment avec Échap et conservent le focus au clavier. « Plus → Déplacer… » permet de classer les pages sans glisser-déposer. Les liens de l’espace de rédaction conservent l’espace, la langue et le document ; la vue Lecteur utilise la même navigation documentaire que le portail, en conservant ses droits de consultation interne.
 

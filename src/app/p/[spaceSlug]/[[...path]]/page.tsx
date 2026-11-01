@@ -4,10 +4,36 @@ import { notFound } from "next/navigation";
 import { PortalView } from "@/components/PortalView";
 import { getSpace, listSpaces, listVariables } from "@/lib/store";
 import { findByPath, firstReadablePage } from "@/lib/tree";
+import { defaultSection, isSection, sectionDocuments } from "@/lib/sections";
+import type { DocSection, DocumentRecord } from "@/lib/types";
 import { portalAllowed } from "@/lib/auth";
 import { PortalUnlock } from "@/components/PortalUnlock";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * /p/{space}/{learn|reference|blog}/{...slugs}. Older links without a tab
+ * segment keep pointing at Reference.
+ */
+function resolvePath(path: string[]): {
+  section: DocSection | undefined;
+  slugs: string[];
+} {
+  if (isSection(path[0])) return { section: path[0], slugs: path.slice(1) };
+  return { section: path.length ? "reference" : undefined, slugs: path };
+}
+
+function findDocument(
+  docs: DocumentRecord[],
+  section: DocSection | undefined,
+  slugs: string[],
+) {
+  if (!section) return firstReadablePage(docs);
+  const inSection = sectionDocuments(docs, section);
+  return slugs.length
+    ? findByPath(inSection, slugs)
+    : firstReadablePage(inSection);
+}
 
 type Props = {
   params: Promise<{ spaceSlug: string; path?: string[] }>;
@@ -34,11 +60,17 @@ export async function generateMetadata({
     await listVariables(),
     locale,
   );
-  const doc =
-    (path.length ? findByPath(docs, path) : firstReadablePage(docs)) ??
-    firstReadablePage(docs);
+  const resolved = resolvePath(path);
+  const section = resolved.section ?? defaultSection(docs);
+  const slugs = resolved.slugs;
+  const blogIndex = section === "blog" && !slugs.length;
+  const doc = blogIndex
+    ? undefined
+    : (findDocument(docs, section, slugs) ?? firstReadablePage(docs));
   return {
-    title: doc?.seoTitle || doc?.title || space.name,
+    title: blogIndex
+      ? `Blog — ${space.name}`
+      : doc?.seoTitle || doc?.title || space.name,
     description: doc?.seoDescription || space.description,
   };
 }
@@ -66,7 +98,8 @@ export default async function PortalDocPage({ params, searchParams }: Props) {
     allVariables,
     locale,
   );
-  if (path.length && !findByPath(documents, path)) notFound();
+  const { section, slugs } = resolvePath(path);
+  if (slugs.length && !findDocument(documents, section, slugs)) notFound();
   return (
     <PortalView
       space={publicSpace}
@@ -83,7 +116,8 @@ export default async function PortalDocPage({ params, searchParams }: Props) {
       }
       documents={documents}
       variables={[]}
-      path={path}
+      path={slugs}
+      section={section}
       locale={locale}
     />
   );

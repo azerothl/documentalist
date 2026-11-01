@@ -20,7 +20,7 @@ export function AccountNavigation({ user }: { user: AccountIdentity }) {
         }
       </span>
       <Link href="/team">Équipe et activité</Link>
-      <AppearanceSettings />
+      <AppearanceSettings variant="icon" />
     </nav>
   );
 }
