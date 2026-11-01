@@ -5,7 +5,7 @@ import type { DocumentRecord } from "./types";
 export const PRODUCT_GUIDE_SPACE_ID = "spc_product";
 
 /** Increment when guide pages are rewritten so migrate refreshes existing installs once. */
-export const PRODUCT_GUIDE_VERSION = 4;
+export const PRODUCT_GUIDE_VERSION = 5;
 
 const IDS = {
   welcome: "doc_welcome",
@@ -300,7 +300,7 @@ export function buildProductGuideDocuments(
             type: "bullet",
             items: [
               "isPublic — controls whether the portal is listed/reachable as a public site",
-              "accessPassword — optional portal password (HttpOnly cookie after unlock)",
+              "Optional portal password (HttpOnly cookie after unlock)",
               "Hidden pages — excluded from the published portal but kept in /app",
             ],
           },

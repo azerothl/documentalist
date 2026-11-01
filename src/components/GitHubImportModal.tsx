@@ -55,6 +55,8 @@ export function GitHubImportModal({
   useEffect(() => {
     if (!open) return;
     setIntoCurrent(Boolean(preferCurrentSpace && targetSpaceId));
+    setAutoSync(true);
+    setSyncIntervalMinutes(60);
     setError("");
   }, [open, preferCurrentSpace, targetSpaceId]);
 
@@ -92,8 +94,6 @@ export function GitHubImportModal({
       const notes: string[] = [];
       if (imported) notes.push(`${imported} page(s) ajoutée(s)`);
       if (updated) notes.push(`${updated} mise(s) à jour`);
-      if (!imported && !updated)
-        notes.push(`${Number(data.imported ?? 0)} page(s) importée(s)`);
       if (matched > imported + updated)
         notes.push(`${matched} Markdown détectés`);
       if (data.truncated)
@@ -101,6 +101,7 @@ export function GitHubImportModal({
       if (skipped) notes.push(`${skipped} ignorée(s) au parsing`);
       if (failed) notes.push(`${failed} non téléchargée(s)`);
       if (autoSync) notes.push("sync auto activée");
+      if (!notes.length) notes.push("Aucune page importée");
       window.alert(notes.join(" · "));
       onImported(data.space);
       onClose();
