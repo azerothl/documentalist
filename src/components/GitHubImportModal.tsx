@@ -88,13 +88,14 @@ export function GitHubImportModal({
       if (!res.ok) throw new Error(data.error || "Import failed");
       const imported = Number(data.imported ?? 0);
       const updated = Number(data.updated ?? 0);
-      const matched = Number(data.matched ?? imported);
+      const matched =
+        data.matched == null ? null : Number(data.matched);
       const skipped = Number(data.skipped ?? 0);
       const failed = Array.isArray(data.failed) ? data.failed.length : 0;
       const notes: string[] = [];
       if (imported) notes.push(`${imported} page(s) ajoutée(s)`);
       if (updated) notes.push(`${updated} mise(s) à jour`);
-      if (matched > imported + updated)
+      if (matched != null && Number.isFinite(matched))
         notes.push(`${matched} Markdown détectés`);
       if (data.truncated)
         notes.push("limite atteinte — affinez le dossier ou réimportez");

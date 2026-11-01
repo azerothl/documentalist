@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SpaceImportSource } from "@/lib/types";
 
 type Props = {
@@ -39,6 +39,23 @@ export function SpaceSyncPanel({
   const [syncIntervalMinutes, setSyncIntervalMinutes] = useState(
     importSource?.syncIntervalMinutes ?? 60,
   );
+
+  useEffect(() => {
+    setProvider(importSource?.provider ?? "github");
+    setRepository(importSource?.repository ?? "");
+    setBranch(importSource?.branch ?? "main");
+    setPath(importSource?.path ?? "docs");
+    setAutoSync(importSource?.autoSync ?? true);
+    setSyncIntervalMinutes(importSource?.syncIntervalMinutes ?? 60);
+  }, [
+    spaceId,
+    importSource?.provider,
+    importSource?.repository,
+    importSource?.branch,
+    importSource?.path,
+    importSource?.autoSync,
+    importSource?.syncIntervalMinutes,
+  ]);
 
   async function saveSource(next: SpaceImportSource, thenSync = false) {
     setBusy(true);
