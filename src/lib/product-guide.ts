@@ -5,7 +5,7 @@ import type { DocumentRecord } from "./types";
 export const PRODUCT_GUIDE_SPACE_ID = "spc_product";
 
 /** Increment when guide pages are rewritten so migrate refreshes existing installs once. */
-export const PRODUCT_GUIDE_VERSION = 5;
+export const PRODUCT_GUIDE_VERSION = 6;
 
 const IDS = {
   welcome: "doc_welcome",
@@ -419,7 +419,7 @@ export function buildProductGuideDocuments(
           { type: "heading", level: 2, text: "GitHub" },
           {
             type: "paragraph",
-            text: "Outils → Depuis GitHub (or Intégrations). Imports a Markdown/MDX tree into a new Space via zipball (up to 500 files; nested folders become categories). Optional token for private repos. Enable automatic sync in the import dialog; use Relancer sync in the workspace header anytime.",
+            text: "Outils → Depuis GitHub (or Intégrations). Imports a Markdown/MDX tree into a new Space (up to 500 files; nested folders become categories). Page order follows SUMMARY.md when present; otherwise links from README.md/index.md (BFS), then frontmatter sidebar_position/nav_order, numeric filename prefixes, and natural path sort. Optional token for private repos. Enable automatic sync in the import dialog; use Relancer sync in the workspace header anytime.",
           },
           { type: "heading", level: 2, text: "GitLab" },
           {
