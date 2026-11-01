@@ -283,7 +283,7 @@ export function createSeedStore(): StoreData {
       name: "Acme Docs",
       llm: {
         enabled: false,
-        provider: "compatible",
+        provider: "openai",
         apiKey: "",
         baseUrl: "https://api.openai.com/v1",
         model: "gpt-4o-mini",

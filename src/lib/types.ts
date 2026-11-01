@@ -18,13 +18,19 @@ export type TipTapNode = {
   text?: string;
 };
 
-export type LlmProvider = "openai" | "anthropic" | "compatible";
+export type LlmProvider =
+  | "openai"
+  | "anthropic"
+  | "ollama"
+  | "lmstudio"
+  | "vllm"
+  | "compatible";
 
 export type LlmSettings = {
   enabled: boolean;
   provider: LlmProvider;
   apiKey: string;
-  /** OpenAI-compatible base URL (ignored for Anthropic default) */
+  /** OpenAI-compatible or Anthropic base URL */
   baseUrl: string;
   model: string;
 };

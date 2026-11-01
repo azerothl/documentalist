@@ -54,6 +54,16 @@ function validateBody(path: string, method: string, body: unknown) {
         spaceId: z.string().optional(),
         documentId: z.string().optional(),
         selection: z.string().max(20000).optional(),
+        scope: z.enum(["page", "related", "space"]).optional(),
+        history: z
+          .array(
+            z.object({
+              role: z.enum(["user", "assistant"]),
+              content: z.string().max(50000),
+            }),
+          )
+          .max(24)
+          .optional(),
       })
       .parse(body);
   if (method === "PATCH" && /^\/api\/spaces\/[^/]+$/.test(path))

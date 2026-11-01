@@ -8,9 +8,11 @@ import { DocEditor } from "@/components/DocEditor";
 import { DocTree } from "@/components/DocTree";
 import { GitHubImportModal } from "@/components/GitHubImportModal";
 import { IntegrationsPanel } from "@/components/IntegrationsPanel";
+import { LlmSettingsFields } from "@/components/LlmSettingsFields";
 import { SidePanel } from "@/components/SidePanel";
 import { hasUnpublishedChanges } from "@/lib/publish";
 import { apiFetch as fetch } from "@/lib/client-request";
+import { getLlmProvider } from "@/lib/llm-providers";
 import { buildTree } from "@/lib/tree";
 import { applyVariables } from "@/lib/tiptap-text";
 import type {
@@ -40,13 +42,24 @@ type WorkspacePayload = {
   comments: Comment[];
 };
 
+const openaiDefaults = getLlmProvider("openai");
 const DEFAULT_LLM: LlmSettings = {
   enabled: false,
-  provider: "compatible",
+  provider: "openai",
   apiKey: "",
-  baseUrl: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
+  baseUrl: openaiDefaults.defaultBaseUrl,
+  model: openaiDefaults.defaultModel,
 };
+
+function llmFromForm(fd: FormData): LlmSettings {
+  return {
+    enabled: fd.get("enabled") === "on",
+    provider: String(fd.get("provider") ?? "openai") as LlmSettings["provider"],
+    apiKey: String(fd.get("apiKey") ?? ""),
+    baseUrl: String(fd.get("baseUrl") ?? ""),
+    model: String(fd.get("model") ?? ""),
+  };
+}
 
 type Props = { initial: WorkspacePayload; isAdmin: boolean };
 
@@ -97,6 +110,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
   const [sideTab, setSideTab] = useState<
     "contents" | "comments" | "seo" | "ai"
   >("contents");
+  const [aiExpanded, setAiExpanded] = useState(false);
   const [locale, setLocale] = useState(initial.space.defaultLocale ?? "en");
   const [mdFormat, setMdFormat] = useState<
     "auto" | "commonmark" | "gfm" | "mdx" | "obsidian"
@@ -452,10 +466,12 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
 
   const orgLlm = payload.organization.llm ?? DEFAULT_LLM;
   const spaceLlm = payload.space.llm;
+  const activeLlm = spaceLlm?.enabled ? spaceLlm : orgLlm;
+  const activeProvider = getLlmProvider(activeLlm.provider);
   const llmEnabled = Boolean(
-    (spaceLlm?.enabled && spaceLlm.apiKey) ||
-    (orgLlm.enabled && orgLlm.apiKey) ||
-    (spaceLlm?.apiKey && spaceLlm.apiKey.length > 0),
+    activeLlm.enabled &&
+      (activeProvider.apiKeyRequired ? Boolean(activeLlm.apiKey.trim()) : true) &&
+      Boolean(activeLlm.model.trim() || activeProvider.defaultModel),
   );
 
   async function createSpace() {
@@ -1032,7 +1048,12 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
               </div>
 
               <div className="flex min-h-0 flex-1">
-                <div className="flex min-w-0 flex-1 flex-col">
+                <div
+                  className={[
+                    "flex min-w-0 flex-col",
+                    aiExpanded && sideTab === "ai" ? "hidden xl:flex xl:w-[38%] xl:min-w-0" : "flex-1",
+                  ].join(" ")}
+                >
                   <DocEditor
                     key={active.id}
                     documentId={active.id}
@@ -1042,15 +1063,30 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
                     onChange={onEditorChange}
                   />
                 </div>
-                <div className="hidden w-[250px] shrink-0 lg:block">
+                <div
+                  className={[
+                    "hidden shrink-0 lg:block",
+                    sideTab === "ai"
+                      ? aiExpanded
+                        ? "w-full min-w-0 flex-1 xl:w-[62%]"
+                        : "w-[min(420px,42vw)]"
+                      : "w-[250px]",
+                  ].join(" ")}
+                >
                   <SidePanel
                     tab={sideTab}
-                    onTabChange={setSideTab}
+                    onTabChange={(tab) => {
+                      setSideTab(tab);
+                      if (tab !== "ai") setAiExpanded(false);
+                    }}
                     content={active.content}
                     document={active}
                     comments={docComments}
                     spaceId={payload.space.id}
+                    spaceName={payload.space.name}
                     llmEnabled={llmEnabled}
+                    aiExpanded={aiExpanded}
+                    onAiExpandedChange={setAiExpanded}
                     onAddComment={(body) => void addComment(body)}
                     onToggleComment={(id, resolved) =>
                       void toggleComment(id, resolved)
@@ -1392,21 +1428,12 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
                 className="flex flex-col gap-3"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  const fd = new FormData(e.currentTarget);
-                  void saveOrgLlm({
-                    enabled: fd.get("enabled") === "on",
-                    provider: String(
-                      fd.get("provider") ?? "compatible",
-                    ) as LlmSettings["provider"],
-                    apiKey: String(fd.get("apiKey") ?? ""),
-                    baseUrl: String(fd.get("baseUrl") ?? ""),
-                    model: String(fd.get("model") ?? ""),
-                  });
+                  void saveOrgLlm(llmFromForm(new FormData(e.currentTarget)));
                 }}
               >
                 <p className="text-xs text-[var(--ink-muted)]">
                   Configuration LLM par défaut pour toute l’organisation
-                  (OpenAI, Anthropic, Ollama, etc.).
+                  (OpenAI, Anthropic, Ollama, LM Studio, vLLM…).
                 </p>
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -1416,46 +1443,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
                   />
                   Activer l’assistant IA
                 </label>
-                <label className="text-sm">
-                  Fournisseur
-                  <select
-                    name="provider"
-                    defaultValue={orgLlm.provider}
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  >
-                    <option value="compatible">OpenAI-compatible</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                </label>
-                <label className="text-sm">
-                  Clé API
-                  <input
-                    name="apiKey"
-                    type="password"
-                    defaultValue={orgLlm.apiKey}
-                    placeholder="sk-… / ghp_…"
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  />
-                </label>
-                <label className="text-sm">
-                  Base URL
-                  <input
-                    name="baseUrl"
-                    defaultValue={orgLlm.baseUrl}
-                    placeholder="https://api.openai.com/v1"
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 font-mono text-xs"
-                  />
-                </label>
-                <label className="text-sm">
-                  Modèle
-                  <input
-                    name="model"
-                    defaultValue={orgLlm.model}
-                    placeholder="gpt-4o-mini"
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  />
-                </label>
+                <LlmSettingsFields initial={orgLlm} />
                 <div className="mt-2 flex justify-end gap-2">
                   <button
                     type="button"
@@ -1485,17 +1473,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
                     void saveSpaceSettings({ llm: null });
                     return;
                   }
-                  void saveSpaceSettings({
-                    llm: {
-                      enabled: fd.get("enabled") === "on",
-                      provider: String(
-                        fd.get("provider") ?? "compatible",
-                      ) as LlmSettings["provider"],
-                      apiKey: String(fd.get("apiKey") ?? ""),
-                      baseUrl: String(fd.get("baseUrl") ?? ""),
-                      model: String(fd.get("model") ?? ""),
-                    },
-                  });
+                  void saveSpaceSettings({ llm: llmFromForm(fd) });
                 }}
               >
                 <p className="text-xs text-[var(--ink-muted)]">
@@ -1518,43 +1496,9 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
                   />
                   Activer pour ce Space
                 </label>
-                <label className="text-sm">
-                  Fournisseur
-                  <select
-                    name="provider"
-                    defaultValue={spaceLlm?.provider ?? orgLlm.provider}
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  >
-                    <option value="compatible">OpenAI-compatible</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                </label>
-                <label className="text-sm">
-                  Clé API
-                  <input
-                    name="apiKey"
-                    type="password"
-                    defaultValue={spaceLlm?.apiKey ?? ""}
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  />
-                </label>
-                <label className="text-sm">
-                  Base URL
-                  <input
-                    name="baseUrl"
-                    defaultValue={spaceLlm?.baseUrl ?? orgLlm.baseUrl}
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 font-mono text-xs"
-                  />
-                </label>
-                <label className="text-sm">
-                  Modèle
-                  <input
-                    name="model"
-                    defaultValue={spaceLlm?.model ?? orgLlm.model}
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  />
-                </label>
+                <LlmSettingsFields
+                  initial={spaceLlm ?? { ...orgLlm, enabled: false }}
+                />
                 <div className="mt-2 flex justify-end gap-2">
                   <button
                     type="button"

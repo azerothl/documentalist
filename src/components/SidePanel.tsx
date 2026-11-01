@@ -15,7 +15,10 @@ type Props = {
   document: DocumentRecord;
   comments: Comment[];
   spaceId: string;
+  spaceName: string;
   llmEnabled: boolean;
+  aiExpanded: boolean;
+  onAiExpandedChange: (expanded: boolean) => void;
   onAddComment: (body: string) => void;
   onToggleComment: (id: string, resolved: boolean) => void;
   onPatchDocument: (patch: Partial<DocumentRecord>) => void;
@@ -30,7 +33,10 @@ export function SidePanel({
   document,
   comments,
   spaceId,
+  spaceName,
   llmEnabled,
+  aiExpanded,
+  onAiExpandedChange,
   onAddComment,
   onToggleComment,
   onPatchDocument,
@@ -67,7 +73,12 @@ export function SidePanel({
         ))}
       </div>
 
-      <div className="flex-1 overflow-auto p-3">
+      <div
+        className={[
+          "flex min-h-0 flex-1 flex-col p-3",
+          tab === "ai" ? "overflow-hidden" : "overflow-auto",
+        ].join(" ")}
+      >
         {tab === "contents" ? (
           <>
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
@@ -234,8 +245,11 @@ export function SidePanel({
         {tab === "ai" ? (
           <AiPanel
             spaceId={spaceId}
+            spaceName={spaceName}
             documentId={document.id}
             llmEnabled={llmEnabled}
+            expanded={aiExpanded}
+            onExpandedChange={onAiExpandedChange}
             onInsert={onInsertAiText}
           />
         ) : null}

@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { LLM_PROVIDER_IDS } from "./llm-providers";
 import type { TipTapNode, DocumentRecord, Space } from "./types";
 
 const locale = z.string().regex(/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/);
 export const llmSchema = z.object({
   enabled: z.boolean(),
-  provider: z.enum(["openai", "anthropic", "compatible"]),
+  provider: z.enum(LLM_PROVIDER_IDS),
   apiKey: z.string().max(4096),
   baseUrl: z.string().max(2048),
   model: z.string().max(200),
