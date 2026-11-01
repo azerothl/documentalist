@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { repairTipTapDoc } from "./markdown";
 import { ensureProductGuide } from "./product-guide";
+import { isValidSlug, uniqueSlug } from "./slug";
 import { richDoc } from "./tiptap-text";
 import type { LlmSettings, SpaceImportSource, StoreData } from "./types";
 
@@ -171,6 +172,19 @@ export function migrateStore(data: StoreData): StoreData {
     if (doc.sourcePath === undefined) doc.sourcePath = null;
     if (doc.markdownFormat === undefined) doc.markdownFormat = null;
     doc.content = repairTipTapDoc(doc.content);
+  }
+
+  // Repair slugs that fail validation (e.g. trailing hyphen after length truncate).
+  for (const doc of data.documents) {
+    if (isValidSlug(doc.slug)) continue;
+    const siblings = data.documents.filter(
+      (d) =>
+        d.spaceId === doc.spaceId &&
+        d.parentId === doc.parentId &&
+        d.locale === doc.locale &&
+        d.id !== doc.id,
+    );
+    doc.slug = uniqueSlug(doc.title || doc.slug || "untitled", siblings.map((d) => d.slug));
   }
 
   for (const space of data.spaces) {
