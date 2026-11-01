@@ -330,6 +330,7 @@ export function PortalView({
                     {previous ? (
                       <Link
                         href={href(previous)}
+                        aria-label={`Page précédente : ${previous.title}`}
                         className="page-step"
                       >
                         <span className="block text-sm text-[var(--ink-muted)]">
@@ -345,6 +346,7 @@ export function PortalView({
                     {next ? (
                       <Link
                         href={href(next)}
+                        aria-label={`Page suivante : ${next.title}`}
                         className="page-step"
                       >
                         <span className="block text-sm text-[var(--ink-muted)]">

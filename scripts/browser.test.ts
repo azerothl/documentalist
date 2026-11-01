@@ -491,6 +491,32 @@ test(
                             type: "paragraph",
                             content: [{ type: "text", text: "Backup ready" }],
                           },
+                          {
+                            type: "paragraph",
+                            content: [
+                              {
+                                type: "text",
+                                text: "Keep the backup for the next release.",
+                              },
+                            ],
+                          },
+                          {
+                            type: "taskList",
+                            content: [
+                              {
+                                type: "taskItem",
+                                attrs: { checked: false },
+                                content: [
+                                  {
+                                    type: "paragraph",
+                                    content: [
+                                      { type: "text", text: "Archive report" },
+                                    ],
+                                  },
+                                ],
+                              },
+                            ],
+                          },
                         ],
                       },
                     ],
@@ -552,6 +578,35 @@ test(
               .isDisabled(),
             true,
           );
+          assert.equal(
+            await page
+              .getByRole("checkbox", { name: "Archive report", exact: true })
+              .isChecked(),
+            false,
+          );
+          assert.equal(
+            await page
+              .getByText("Keep the backup for the next release.", {
+                exact: true,
+              })
+              .count(),
+            1,
+          );
+          const tasks = await page.getByRole("checkbox").evaluateAll((inputs) =>
+            inputs.map((input) => ({
+              id: input.id,
+              labels: (input as HTMLInputElement).labels?.length,
+            })),
+          );
+          assert.equal(new Set(tasks.map((task) => task.id)).size, 3);
+          assert.ok(tasks.every((task) => task.labels === 1));
+          await page
+            .getByRole("navigation", {
+              name: "Pages précédente et suivante",
+              exact: true,
+            })
+            .getByRole("link", { name: /^Page précédente : / })
+            .waitFor();
           assert.equal(
             await page.locator("article").getAttribute("lang"),
             "en",

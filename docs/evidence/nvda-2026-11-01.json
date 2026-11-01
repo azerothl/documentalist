@@ -1,0 +1,112 @@
+{
+  "date": "2026-11-01",
+  "nvda": "2026.3",
+  "language": "fr",
+  "engine": "Microsoft Edge (headed)",
+  "method": "NV Access SystemTestSpy from release-2026.3, local profile; real NVDA speech captured before synthesis",
+  "steps": [
+    {
+      "name": "En-tête compact",
+      "sameRow": true,
+      "headerHeight": 95
+    },
+    {
+      "name": "Titre du document",
+      "app": "msedge",
+      "pid": 8788,
+      "owned": true,
+      "value": "Qualification NVDA",
+      "role": "EDITABLETEXT"
+    },
+    {
+      "name": "Contrôle du focus NVDA",
+      "key": "NVDA+tab",
+      "speech": "Titre du document  édition  focalisé  Qualification NVDA"
+    },
+    {
+      "name": "Nom et rôle de l’éditeur",
+      "speech": "Contenu du document  édition  multiligne  tableau  de 2 lignes et 2 colonnes  ligne 2  Valeur  colonne 2  Sombre"
+    },
+    {
+      "name": "Ouverture des préférences",
+      "speech": "Apparence et lecture  dialogue  Thème￼ Taille du texte￼ Largeur de lecture￼ ￼Mode lecture Masquer les outils de rédaction pour se concentrer sur le document. Ces préférences sont enregistrées dans ce navigateur et s’appliquent à tous vos espaces. Les animations suivent les préférences de votre appareil.\ncliquable  Fermer  bouton\nMode navigation\nApparence et lecture  dialogue  Thème￼ Taille du texte￼ Largeur de lecture￼ ￼Mode lecture Masquer les outils de rédaction pour se concentrer sur le document. Ces préférences sont enregistrées dans ce navigateur et s’appliquent à tous vos espaces. Les animations suivent les préférences de votre appareil.\nbouton  Fermer"
+    },
+    {
+      "name": "Parcours Tab dans le dialogue",
+      "key": "tab",
+      "speech": "Thème  liste déroulante  Suivre le système  réduit\nMode formulaire"
+    },
+    {
+      "name": "Parcours inverse du dialogue",
+      "key": "shift+tab",
+      "speech": "Fermer  bouton\nMode navigation"
+    },
+    {
+      "name": "Fermeture et retour du focus",
+      "key": "escape",
+      "speech": "Mode formulaire\nbannière région  Compte  navigation région  Apparence et lecture  bouton  ouvre un dialogue\nMode navigation",
+      "remainingDialogs": 0
+    },
+    {
+      "name": "Annonce de recherche vide",
+      "speech": "Documents de l’espace  navigation région\nRechercher dans cet espace  édition  introuvable-nvda\nMode formulaire\nAucun résultat pour « introuvable-nvda »."
+    },
+    {
+      "name": "Onglet et état sélectionné",
+      "speech": "principale région\nPanneau de page  complémentaire région\nOutils de la page  onglet\nSommaire  onglet  sélectionné  1 sur 4"
+    },
+    {
+      "name": "Flèche vers Commentaires",
+      "key": "rightArrow",
+      "speech": "Commentaires  onglet  sélectionné  2 sur 4\nCommentaires  onglet  sélectionné  2 sur 4"
+    },
+    {
+      "name": "Nom du champ de commentaire",
+      "speech": "Commentaires  page de propriété\nformulaire région\nVotre commentaire  édition  multiligne  Laisser un commentaire…  vide"
+    },
+    {
+      "name": "Lecture du portail et lien d’évitement",
+      "speech": "Mode navigation\nQualification NVDA  document\nlien  Aller au contenu\nAller au contenu  lien"
+    },
+    {
+      "name": "Activation du lien d’évitement",
+      "key": "enter",
+      "speech": "principale région  Fil d’Ariane  navigation région  liste  de 2 éléments  Documentation de test  lien  page courante  Qualification NVDA  hors de liste  Qualification NVDA  titre  niveau 1  Cette page permet de vérifier la lecture et la navigation au clavier.  Installation  titre  niveau 2  Choisissez un thème et consultez le sommaire.  Information  Le contenu de cette note doit rester accessible.  Attention  Conservez une sauvegarde avant publication.  Succès  Le contenu de cette note doit rester accessible.  Suivi des tâches  titre  niveau 2  liste    Relire la documentation  case à cocher  non disponible  non coché  Relire la documentation    Préparer la sauvegarde  case à cocher  non disponible  coché  Préparer la sauvegarde  hors de liste  Réglages disponibles  titre  niveau 2  Tableau du document  région  tableau  ligne 1  colonne 1  Option  colonne 2  Valeur  ligne 2  Option  colonne 1  Thème  Valeur  colonne 2  Sombre  hors de tableau  hors de région  Pages précédente et suivante  navigation région  Page suivante : Étape suivante"
+    },
+    {
+      "name": "Navigation par titres",
+      "key": "h",
+      "speech": "Qualification NVDA  titre  niveau 1"
+    },
+    {
+      "name": "Tableau et dimensions",
+      "key": "t",
+      "speech": "Tableau du document  région  tableau  de 2 lignes et 2 colonnes  ligne 1  colonne 1  Option"
+    },
+    {
+      "name": "Tâches avec état",
+      "key": "x",
+      "speech": "principale région  liste  de 2 éléments  Relire la documentation  case à cocher  non disponible  non coché",
+      "visibleTasks": 2
+    },
+    {
+      "name": "Deuxième tâche cochée",
+      "key": "x",
+      "speech": "Préparer la sauvegarde  case à cocher  non disponible  coché"
+    },
+    {
+      "name": "Lecture continue du contenu",
+      "key": "NVDA+downArrow",
+      "speech": "lien  Aller au contenu\nbannière région  lien  Documentation de test\nVersion de la documentation  liste déroulante  réduit  current\nLangue de la documentation  liste déroulante  réduit  fr\nRechercher dans la documentation  édition  Rechercher…\nbouton  ouvre un dialogue  Apparence et lecture\nlien  Espace de rédaction\nDocuments de l’espace  navigation région  liste  de 2 éléments  lien  page courante  Qualification NVDA\nlien  Étape suivante  hors de liste\nprincipale région  Fil d’Ariane  navigation région  liste  de 2 éléments  lien  Documentation de test\npage courante  Qualification NVDA  hors de liste\ntitre  niveau 1  Qualification NVDA\nCette page permet de vérifier la lecture et la navigation au clavier.\ntitre  niveau 2  Installation\nChoisissez un thème et consultez le sommaire.\nInformation\nLe contenu de cette note doit rester accessible.\nAttention\nConservez une sauvegarde avant publication.\nSuccès\nLe contenu de cette note doit rester accessible.\ntitre  niveau 2  Suivi des tâches\nliste  de 2 éléments  case à cocher  non disponible  non coché\nRelire la documentation\ncase à cocher  non disponible  coché\nPréparer la sauvegarde  hors de liste\ntitre  niveau 2  Réglages disponibles\nTableau du document  région  tableau  de 2 lignes et 2 colonnes  ligne 1  colonne 1  Option\ncolonne 2  Valeur\nligne 2  Option  colonne 1  Thème\nValeur  colonne 2  Sombre  hors de tableau  hors de région\nPages précédente et suivante  navigation région  lien  Page suivante : Étape suivante\nSur cette page  navigation région  Sommaire\nSUR CETTE PAGE\nliste  de 3 éléments  lien  Installation\nlien  Suivi des tâches\nlien  Réglages disponibles  hors de liste\ncliquable"
+    },
+    {
+      "name": "Lien vers la page suivante",
+      "speech": "principale région  Pages précédente et suivante  navigation région  Page suivante : Étape suivante  lien"
+    },
+    {
+      "name": "Menu Documents à 390 px",
+      "speech": "Documents  dialogue\ncliquable  Fermer  bouton\nDocuments  dialogue\nbouton  Fermer"
+    }
+  ],
+  "errors": []
+}

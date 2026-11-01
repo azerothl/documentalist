@@ -59,6 +59,8 @@ Sur ordinateur, le nom de l’application, les sélecteurs et le compte partagen
 
 Les couleurs personnalisées d’un espace sont ajustées à l’affichage pour maintenir un contraste lisible dans chaque thème. Les encadrés publiés conservent leurs intitulés Information, Attention et Succès. Les contrôles automatisés du navigateur couvrent notamment les thèmes avec axe, les dialogues au clavier, le repli à 320 px et la navigation en lecture seule. Ils ne remplacent pas une qualification complète avec des lecteurs d’écran et des appareils réels.
 
+Un parcours ciblé a également été vérifié le 1er novembre 2026 avec NVDA 2026.3 et Microsoft Edge sous Windows : 21 étapes couvrant l’éditeur, les préférences, le focus, la recherche, les onglets, les commentaires et la lecture du portail. Les libellés des tâches ont été associés par des éléments `label` natifs pour éviter leur répétition en lecture continue ; les liens de page précédente et suivante disposent d’un nom explicite. Le menu documentaire a aussi été vérifié avec une fenêtre de 390 px de large sur ordinateur.
+
 ## Données et sauvegardes
 
 Au premier accès, l’ancien `data/store.json` est migré sans réinitialisation silencieuse : son contenu est conservé dans `legacy-backup.enc`, puis le fichier en clair est retiré. Un fichier invalide provoque une erreur explicite.
