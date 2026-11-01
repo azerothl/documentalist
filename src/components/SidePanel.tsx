@@ -2,6 +2,8 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
+import { useId } from "react";
+import { TabList } from "@/components/TabList";
 import { AiPanel } from "@/components/AiPanel";
 import { extractHeadings } from "@/lib/tiptap-text";
 import type { Comment, DocumentRecord, TipTapDoc } from "@/lib/types";
@@ -43,37 +45,36 @@ export function SidePanel({
   onJumpToHeading,
   onInsertAiText,
 }: Props) {
+  const tabsId = useId();
   const headings = extractHeadings(content);
   const openComments = comments.filter((c) => !c.resolved);
 
   return (
-    <aside className="flex h-full flex-col border-l border-[var(--line)] bg-[var(--surface)]">
-      <div className="flex border-b border-[var(--line)] text-[12px] font-medium">
-        {(
+    <aside
+      aria-label="Panneau de page"
+      className="flex h-full min-h-0 flex-col border-l border-[var(--line)] bg-[var(--surface)]"
+    >
+      <TabList
+        id={tabsId}
+        label="Outils de la page"
+        value={tab}
+        onChange={onTabChange}
+        items={[
+          ["contents", "Sommaire"],
           [
-            ["contents", "Sommaire"],
-            ["comments", `Comm.${openComments.length ? ` (${openComments.length})` : ""}`],
-            ["seo", "SEO"],
-            ["ai", "IA"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={[
-              "px-2.5 py-2.5",
-              tab === id
-                ? "border-b-2 border-[var(--accent)] text-[var(--ink)]"
-                : "text-[var(--ink-faint)]",
-            ].join(" ")}
-            onClick={() => onTabChange(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+            "comments",
+            `Commentaires${openComments.length ? ` (${openComments.length})` : ""}`,
+          ],
+          ["seo", "SEO"],
+          ["ai", "IA"],
+        ]}
+      />
 
       <div
+        role="tabpanel"
+        id={`${tabsId}-panel`}
+        aria-labelledby={`${tabsId}-${tab}`}
+        tabIndex={0}
         className={[
           "flex min-h-0 flex-1 flex-col p-3",
           tab === "ai" ? "overflow-hidden" : "overflow-auto",
@@ -122,6 +123,7 @@ export function SidePanel({
               }}
             >
               <textarea
+                aria-label="Votre commentaire"
                 name="body"
                 rows={3}
                 placeholder="Laisser un commentaire…"
@@ -129,7 +131,7 @@ export function SidePanel({
               />
               <button
                 type="submit"
-                className="self-end rounded-md bg-[var(--accent)] px-2.5 py-1 text-xs font-medium text-white"
+                className="self-end rounded-md bg-[var(--accent)] px-2.5 py-1 text-xs font-medium text-[var(--on-accent)]"
               >
                 Commenter
               </button>
@@ -174,7 +176,8 @@ export function SidePanel({
         {tab === "seo" ? (
           <div className="flex flex-col gap-3 text-sm">
             <p className="text-[12px] text-[var(--ink-muted)]">
-              Ces champs contrôlent l’URL et l’aperçu de la page sur le site public.
+              Ces champs contrôlent l’URL et l’aperçu de la page sur le site
+              public.
             </p>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
@@ -191,7 +194,7 @@ export function SidePanel({
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
-                Meta description
+                Description pour les moteurs de recherche
               </span>
               <textarea
                 rows={3}

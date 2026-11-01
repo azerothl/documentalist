@@ -76,7 +76,7 @@ export function TeamPanel({ admin }: { admin: boolean }) {
         Se déconnecter
       </button>
       {error && (
-        <p role="alert" className="text-red-700">
+        <p role="alert" className="text-[var(--danger)]">
           {error}
         </p>
       )}
@@ -199,7 +199,7 @@ export function TeamPanel({ admin }: { admin: boolean }) {
               </label>
               <button
                 disabled={busy}
-                className="rounded bg-[var(--accent)] p-2 text-white"
+                className="rounded bg-[var(--accent)] p-2 text-[var(--on-accent)]"
               >
                 Ajouter un compte
               </button>

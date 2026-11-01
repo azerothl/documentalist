@@ -28,6 +28,7 @@ type Props = {
   editable?: boolean;
   showToolbar?: boolean;
   onChange?: (content: TipTapDoc) => void;
+  locale?: string;
 };
 
 type SlashState = {
@@ -131,7 +132,12 @@ function buildSlashItems(
       run: replace(() => {
         const src = window.prompt("URL de l’image", "https://");
         if (!src) return;
-        editor.chain().focus().setImage({ src }).run();
+        const alt = window.prompt(
+          "Description de l’image (laisser vide si elle est décorative)",
+          "",
+        );
+        if (alt === null) return;
+        editor.chain().focus().setImage({ src, alt }).run();
       }),
     },
     {
@@ -164,6 +170,7 @@ export function DocEditor({
   editable = true,
   showToolbar = true,
   onChange,
+  locale = "fr",
 }: Props) {
   const onChangeRef = useRef(onChange);
   useEffect(() => {
@@ -185,6 +192,8 @@ export function DocEditor({
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
         codeBlock: false,
+        link: false,
+        underline: false,
       }),
       CodeBlockLowlight.configure({
         lowlight,
@@ -211,6 +220,9 @@ export function DocEditor({
     editorProps: {
       attributes: {
         class: "doc-editor prose-doc focus:outline-none min-h-[50vh] px-1",
+        "aria-label": "Contenu du document",
+        "aria-multiline": "true",
+        "aria-readonly": String(!editable),
       },
       handleKeyDown: (_view, event) => {
         if (event.key === "Escape" && slashRef.current) {
@@ -322,8 +334,13 @@ export function DocEditor({
       {showToolbar ? (
         <EditorToolbar editor={editor} disabled={!editable} />
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto px-8 py-6">
-        <EditorContent editor={editor} />
+      <div
+        lang={locale}
+        className="editor-scroll min-h-0 flex-1 overflow-auto px-4 py-6 md:px-8"
+      >
+        <div className="reading-document">
+          <EditorContent editor={editor} />
+        </div>
       </div>
       <SlashMenu
         key={`${documentId}:${slash?.query}:${Boolean(slash)}`}

@@ -3,52 +3,59 @@ import { WorkspaceApp } from "@/components/WorkspaceApp";
 import { listSpaces, getWorkspacePayload } from "@/lib/store";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { DocumentContent } from "@/components/DocumentContent";
+import { PortalView } from "@/components/PortalView";
+import { pathSlugs } from "@/lib/tree";
 
 export const dynamic = "force-dynamic";
 
-export default async function AppPage() {
+export default async function AppPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ space?: string; doc?: string; lang?: string }>;
+}) {
+  const query = await searchParams;
   const user = await requireUser();
   const spaces = await listSpaces();
-  const first = spaces[0];
+  const first = spaces.find((s) => s.id === query.space) ?? spaces[0];
   if (!first) redirect("/");
   const payload = await getWorkspacePayload(first.id);
   if (!payload) redirect("/");
-  if (user.role === "viewer")
+  const requestedDocument = payload.documents.find((d) => d.id === query.doc);
+  const locale = payload.space.locales.includes(query.lang ?? "")
+    ? query.lang!
+    : (requestedDocument?.locale ?? payload.space.defaultLocale);
+  const selected =
+    requestedDocument?.locale === locale ? requestedDocument : undefined;
+  if (user.role === "viewer") {
+    const { id, name, slug, accentColor, locales } = payload.space;
     return (
-      <main className="mx-auto max-w-4xl space-y-6 p-6">
-        <h1 className="font-[family-name:var(--font-display)] text-3xl">
-          Documentation en lecture seule
-        </h1>
-        {await Promise.all(
-          spaces.map(async (space) => {
-            const p = await getWorkspacePayload(space.id);
-            return (
-              <section key={space.id}>
-                <h2 className="mb-3 text-2xl">{space.name}</h2>
-                {p?.documents
-                  .filter((d) => d.kind === "page")
-                  .map((d) => (
-                    <details
-                      key={d.id}
-                      className="mb-2 rounded border border-[var(--line)] p-3"
-                    >
-                      <summary className="cursor-pointer">
-                        {d.title} · {d.locale}
-                      </summary>
-                      <DocumentContent content={d.content} />
-                    </details>
-                  ))}
-              </section>
-            );
-          }),
-        )}
-      </main>
+      <PortalView
+        key={`${id}:${locale}:${selected?.id ?? ""}`}
+        internal
+        account={{ name: user.name, role: user.role }}
+        space={{ id, name, slug, accentColor, locales }}
+        documents={payload.documents}
+        variables={payload.variables}
+        availableSpaces={spaces.map((s) => ({ id: s.id, name: s.name }))}
+        versionSpaces={spaces
+          .filter((s) => s.versionGroupId === first.versionGroupId)
+          .map((s) => ({
+            id: s.id,
+            slug: s.slug,
+            versionLabel: s.versionLabel,
+          }))}
+        path={selected ? pathSlugs(payload.documents, selected.id) : []}
+        locale={locale}
+      />
     );
+  }
   return (
     <WorkspaceApp
       initial={clientData(payload)}
       isAdmin={user.role === "admin"}
+      account={{ name: user.name, role: user.role }}
+      initialDocumentId={selected?.id}
+      initialLocale={locale}
     />
   );
 }

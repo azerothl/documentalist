@@ -27,7 +27,7 @@ const ACTIONS: { id: AiAction; label: string; hint: string }[] = [
   {
     id: "ask",
     label: "Question",
-    hint: "Répondre à partir de la doc (page, liens, Space)",
+    hint: "Répondre à partir de la documentation (page, liens, espace)",
   },
   {
     id: "draft",
@@ -54,8 +54,8 @@ const SCOPES: { id: AiContextScope; label: string; hint: string }[] = [
   },
   {
     id: "space",
-    label: "Space entier",
-    hint: "Toutes les pages du Space (priorité à la page et aux liens)",
+    label: "Espace entier",
+    hint: "Toutes les pages de l’espace (priorité à la page et aux liens)",
   },
 ];
 
@@ -155,7 +155,7 @@ export function AiPanel({
       <div className="flex flex-col gap-2 text-sm text-[var(--ink-muted)]">
         <p>
           Aucun LLM actif. Configurez une clé API dans{" "}
-          <strong>Paramètres → IA</strong> (organisation ou Space).
+          <strong>Paramètres → IA</strong> (organisation ou espace).
         </p>
       </div>
     );
@@ -166,7 +166,9 @@ export function AiPanel({
       <div className="flex items-start justify-between gap-2">
         <p className="text-[12px] text-[var(--ink-muted)]">
           Recherche dans <strong>{spaceName}</strong>
-          {expanded ? " — vous pouvez enchaîner des questions." : ". Agrandissez pour mieux lire."}
+          {expanded
+            ? " — vous pouvez enchaîner des questions."
+            : ". Agrandissez pour mieux lire."}
         </p>
         <div className="flex shrink-0 gap-1">
           {messages.length > 0 ? (
@@ -244,8 +246,8 @@ export function AiPanel({
       >
         {messages.length === 0 ? (
           <p className="text-[13px] text-[var(--ink-faint)]">
-            Aucun message pour l’instant. Posez une première question ci-dessous,
-            puis continuez la discussion.
+            Aucun message pour l’instant. Posez une première question
+            ci-dessous, puis continuez la discussion.
           </p>
         ) : (
           messages.map((m) => (
@@ -281,7 +283,9 @@ export function AiPanel({
                         Sources ({m.sources.length}
                         {m.truncated ? ", tronqué" : ""})
                       </summary>
-                      <p className="mt-1 leading-snug">{m.sources.join(" · ")}</p>
+                      <p className="mt-1 leading-snug">
+                        {m.sources.join(" · ")}
+                      </p>
                     </details>
                   ) : null}
                   <button
@@ -301,10 +305,15 @@ export function AiPanel({
         ) : null}
       </div>
 
-      {error ? <p className="text-xs text-[#A32D2D]">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-xs text-[var(--danger)]">
+          {error}
+        </p>
+      ) : null}
 
       <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-2">
         <textarea
+          aria-label="Votre demande à l’assistant"
           ref={inputRef}
           rows={expanded ? 3 : 2}
           value={prompt}
@@ -323,7 +332,7 @@ export function AiPanel({
                   ? "Ex. À quoi sert Rbitnet ?"
                   : "Ex. Que dit cette page sur le KV cache ?"
                 : action === "draft"
-                  ? "Ex. Écrire une intro cohérente avec le Space…"
+                  ? "Ex. Écrire une introduction cohérente avec l’espace…"
                   : "Collez le texte à corriger…"
           }
           className="w-full resize-none rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-sm"
@@ -331,7 +340,7 @@ export function AiPanel({
         <button
           type="button"
           disabled={busy || !prompt.trim()}
-          className="self-end rounded-md bg-[var(--accent)] px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50"
+          className="self-end rounded-md bg-[var(--accent)] px-2.5 py-1 text-xs font-medium text-[var(--on-accent)] disabled:opacity-50"
           onClick={() => void run()}
         >
           {busy

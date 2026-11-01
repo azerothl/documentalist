@@ -1,12 +1,17 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { AppearanceSettings } from "@/components/Appearance";
 export function PortalUnlock({ slug, name }: { slug: string; name: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
-    <main className="flex min-h-dvh items-center px-4">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="flex min-h-dvh flex-col justify-center gap-4 px-4"
+    >
       <form
         className="mx-auto flex w-full max-w-sm flex-col gap-4 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-6"
         onSubmit={async (e) => {
@@ -45,17 +50,20 @@ export function PortalUnlock({ slug, name }: { slug: string; name: string }) {
           />
         </label>
         {error && (
-          <p role="alert" className="text-red-700">
+          <p role="alert" className="text-[var(--danger)]">
             {error}
           </p>
         )}
         <button
           disabled={busy}
-          className="rounded bg-[var(--accent)] p-2 text-white"
+          className="rounded bg-[var(--accent)] p-2 text-[var(--on-accent)]"
         >
           {busy ? "Vérification…" : "Ouvrir le portail"}
         </button>
       </form>
+      <div className="mx-auto w-full max-w-sm">
+        <AppearanceSettings />
+      </div>
     </main>
   );
 }

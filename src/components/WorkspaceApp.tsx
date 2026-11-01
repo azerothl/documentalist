@@ -10,6 +10,15 @@ import { GitHubImportModal } from "@/components/GitHubImportModal";
 import { IntegrationsPanel } from "@/components/IntegrationsPanel";
 import { LlmSettingsFields } from "@/components/LlmSettingsFields";
 import { SidePanel } from "@/components/SidePanel";
+import {
+  AccountNavigation,
+  type AccountIdentity,
+} from "@/components/AccountNavigation";
+import { TabList } from "@/components/TabList";
+import { Dialog } from "@/components/Dialog";
+import { useAppearance } from "@/components/Appearance";
+import { accentStyle } from "@/lib/appearance";
+import { documentTrail } from "@/lib/reading";
 import { hasUnpublishedChanges } from "@/lib/publish";
 import { apiFetch as fetch } from "@/lib/client-request";
 import { getLlmProvider } from "@/lib/llm-providers";
@@ -61,7 +70,13 @@ function llmFromForm(fd: FormData): LlmSettings {
   };
 }
 
-type Props = { initial: WorkspacePayload; isAdmin: boolean };
+type Props = {
+  initial: WorkspacePayload;
+  isAdmin: boolean;
+  account: AccountIdentity;
+  initialDocumentId?: string;
+  initialLocale?: string;
+};
 
 function mapNode(node: TipTapNode, vars: Record<string, string>): TipTapNode {
   const next: TipTapNode = { ...node };
@@ -80,15 +95,26 @@ function substituteDoc(
   };
 }
 
-export function WorkspaceApp({ initial, isAdmin }: Props) {
+export function WorkspaceApp({
+  initial,
+  isAdmin,
+  account,
+  initialDocumentId,
+  initialLocale,
+}: Props) {
+  const { preferences, theme, update: updateAppearance } = useAppearance();
+  const readingMode = preferences.readingMode;
   const [payload, setPayload] = useState(initial);
   const [activeId, setActiveId] = useState<string | null>(
-    initial.documents.find(
-      (d) =>
-        d.kind === "page" && d.locale === (initial.space.defaultLocale ?? "en"),
-    )?.id ??
+    initialDocumentId ??
       initial.documents.find(
-        (d) => d.locale === (initial.space.defaultLocale ?? "en"),
+        (d) =>
+          d.kind === "page" &&
+          d.locale === (initialLocale ?? initial.space.defaultLocale ?? "en"),
+      )?.id ??
+      initial.documents.find(
+        (d) =>
+          d.locale === (initialLocale ?? initial.space.defaultLocale ?? "en"),
       )?.id ??
       null,
   );
@@ -96,6 +122,9 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
     "idle" | "saving" | "saved" | "error"
   >("idle");
   const [query, setQuery] = useState("");
+  const [searchState, setSearchState] = useState<
+    "idle" | "loading" | "done" | "error"
+  >("idle");
   const [searchHits, setSearchHits] = useState<
     { document: DocumentRecord; snippet: string }[]
   >([]);
@@ -111,7 +140,9 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
     "contents" | "comments" | "seo" | "ai"
   >("contents");
   const [aiExpanded, setAiExpanded] = useState(false);
-  const [locale, setLocale] = useState(initial.space.defaultLocale ?? "en");
+  const [locale, setLocale] = useState(
+    initialLocale ?? initial.space.defaultLocale ?? "en",
+  );
   const [mdFormat, setMdFormat] = useState<
     "auto" | "commonmark" | "gfm" | "mdx" | "obsidian"
   >("auto");
@@ -126,13 +157,83 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
   );
   const [notice, setNotice] = useState("");
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [pagePanelOpen, setPagePanelOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveTarget, setMoveTarget] = useState("root");
+  const [movePosition, setMovePosition] = useState<
+    "before" | "after" | "inside"
+  >("after");
+  const [moving, setMoving] = useState(false);
+  const [operationStatus, setOperationStatus] = useState("");
+  const [publishing, setPublishing] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  function selectDocument(id: string) {
+    const url = new URL(window.location.href);
+    url.search = new URLSearchParams({
+      space: payload.space.id,
+      doc: id,
+      lang: locale,
+    }).toString();
+    if (url.href !== window.location.href)
+      window.history.pushState(null, "", url);
+    setActiveId(id);
+    setPreview(false);
+    setNavigationOpen(false);
+    setMenuOpen(false);
+    if (navigationOpen)
+      window.requestAnimationFrame(() =>
+        document.getElementById("main-content")?.focus(),
+      );
+  }
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.search = new URLSearchParams({
+      space: payload.space.id,
+      ...(activeId ? { doc: activeId } : {}),
+      lang: locale,
+    }).toString();
+    window.history.replaceState(null, "", url);
+  }, [activeId, payload.space.id, locale]);
+  useEffect(() => {
+    const restore = () => window.location.reload();
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !menuRef.current?.contains(event.target)
+      )
+        setMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [menuOpen]);
 
   const localeDocs = useMemo(
     () => payload.documents.filter((d) => (d.locale || "en") === locale),
     [payload.documents, locale],
   );
   const active = localeDocs.find((d) => d.id === activeId) ?? null;
+  useEffect(() => {
+    document.title = `${active?.title ?? "Documentation"} — ${payload.space.name} — Documentalist`;
+  }, [active?.title, payload.space.name]);
   const tree = useMemo(() => buildTree(localeDocs), [localeDocs]);
   const dirty = hasUnpublishedChanges(payload.space, payload.documents);
   const docComments = payload.comments.filter((c) => c.documentId === activeId);
@@ -202,6 +303,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
     const t = window.setTimeout(async () => {
       if (!query.trim()) {
         setSearchHits([]);
+        setSearchState("idle");
         return;
       }
       try {
@@ -221,11 +323,14 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
               snippet: r.snippet,
             })),
         );
+        setSearchState("done");
       } catch (error) {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted) {
+          setSearchState("error");
           setNotice(
             error instanceof Error ? error.message : "Recherche impossible.",
           );
+        }
       }
     }, 200);
     return () => {
@@ -281,7 +386,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
 
   const onEditorChange = useCallback(
     (content: TipTapDoc) => {
-      if (!active || preview) return;
+      if (!active || preview || readingMode) return;
       setPayload((prev) => ({
         ...prev,
         documents: prev.documents.map((d) =>
@@ -300,7 +405,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
         }, 700),
       );
     },
-    [active, persistContent, preview],
+    [active, persistContent, preview, readingMode],
   );
 
   const flushPending = useCallback(async () => {
@@ -403,15 +508,31 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
     documentVersions.current.set(data.document.id, data.document.updatedAt);
     setActiveId(data.document.id);
     setToolsOpen(false);
+    setNavigationOpen(false);
   }
 
   async function publish() {
-    await flushPending();
-    const res = await fetch(`/api/spaces/${payload.space.id}/publish`, {
-      method: "POST",
-    });
-    const data = await res.json();
-    setPayload((prev) => ({ ...prev, space: data.space }));
+    if (publishing) return;
+    setPublishing(true);
+    try {
+      await flushPending();
+      const res = await fetch(`/api/spaces/${payload.space.id}/publish`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      setPayload((prev) => ({ ...prev, space: data.space }));
+      setOperationStatus(
+        "Publication réussie. La nouvelle version est disponible sur le portail.",
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Publication impossible. Réessayez.",
+      );
+    } finally {
+      setPublishing(false);
+    }
   }
 
   async function saveSpaceSettings(patch: Partial<Space>) {
@@ -443,7 +564,17 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
     if (!root) return;
     const headings = root.querySelectorAll("h1, h2, h3");
     const el = headings[index] as HTMLElement | undefined;
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setPagePanelOpen(false);
+    window.requestAnimationFrame(() => {
+      el?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "start",
+      });
+      el?.setAttribute("tabindex", "-1");
+      el?.focus({ preventScroll: true });
+    });
   }
 
   function insertAiText(text: string) {
@@ -470,12 +601,12 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
   const activeProvider = getLlmProvider(activeLlm.provider);
   const llmEnabled = Boolean(
     activeLlm.enabled &&
-      (activeProvider.apiKeyRequired ? Boolean(activeLlm.apiKey.trim()) : true) &&
-      Boolean(activeLlm.model.trim() || activeProvider.defaultModel),
+    (activeProvider.apiKeyRequired ? Boolean(activeLlm.apiKey.trim()) : true) &&
+    Boolean(activeLlm.model.trim() || activeProvider.defaultModel),
   );
 
   async function createSpace() {
-    const name = window.prompt("Nom du Space");
+    const name = window.prompt("Nom de l’espace");
     if (!name?.trim()) return;
     const res = await fetch("/api/spaces", {
       method: "POST",
@@ -595,8 +726,13 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
     const docs = [...payload.documents];
     const drag = docs.find((d) => d.id === dragId);
     const drop = docs.find((d) => d.id === dropId);
-    if (!drag || !drop) return;
-    const parentId = position === "inside" ? drop.id : drop.parentId;
+    if (!drag || (!drop && dropId !== "root")) return;
+    const parentId =
+      dropId === "root"
+        ? null
+        : position === "inside"
+          ? drop!.id
+          : drop!.parentId;
     const siblings = docs
       .filter(
         (d) =>
@@ -608,6 +744,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
     let insertAt = siblings.findIndex((d) => d.id === dropId);
     if (position === "after") insertAt += 1;
     if (position === "inside") insertAt = siblings.length;
+    if (dropId === "root") insertAt = siblings.length;
     if (insertAt < 0) insertAt = siblings.length;
     siblings.splice(insertAt, 0, { ...drag, parentId });
     const orderedIds = siblings.map((d) => d.id);
@@ -625,6 +762,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
       data.documents.map((d: DocumentRecord) => [d.id, d.updatedAt]),
     );
     setPayload((prev) => ({ ...prev, documents: data.documents }));
+    setOperationStatus(`« ${drag.title} » a été déplacé.`);
   }
 
   async function addComment(body: string) {
@@ -678,19 +816,180 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
 
   const saveLabel =
     saveState === "saving"
-      ? "Enregistrement…"
+      ? "Enregistrement du brouillon…"
       : saveState === "saved"
-        ? "Enregistré"
+        ? "Brouillon enregistré"
         : saveState === "error"
           ? "Erreur d’enregistrement"
-          : "Prêt";
+          : "Brouillon prêt";
+
+  const workspaceTools = (
+    <>
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={(event) => {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+          setToolsOpen(true);
+        }}
+        aria-haspopup="dialog"
+      >
+        Outils
+      </button>
+      <button
+        type="button"
+        className="secondary-button"
+        disabled={!isAdmin}
+        title={!isAdmin ? "Réservé aux administrateurs" : undefined}
+        onClick={(event) => {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+          setSettingsOpen(true);
+        }}
+        aria-haspopup="dialog"
+      >
+        Paramètres
+      </button>
+      {payload.space.publishedAt ? (
+        <Link
+          href={`/p/${payload.space.slug}?lang=${locale}`}
+          className="secondary-button"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Voir le site<span className="sr-only"> (nouvel onglet)</span>
+        </Link>
+      ) : null}
+    </>
+  );
+
+  const navigationContent = (
+    <>
+      <div className="space-y-2 border-b border-[var(--line)] p-3">
+        <input
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setSearchState(e.target.value.trim() ? "loading" : "idle");
+            setSearchHits([]);
+          }}
+          aria-label="Rechercher dans cet espace"
+          type="search"
+          placeholder="Rechercher…"
+          className="w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-sm"
+        />
+        {query.trim() ? (
+          <p role="status" className="text-sm text-[var(--ink-muted)]">
+            {searchState === "loading"
+              ? "Recherche…"
+              : searchState === "error"
+                ? "Recherche impossible. Réessayez."
+                : searchHits.length
+                  ? `${searchHits.length} résultat${searchHits.length > 1 ? "s" : ""}`
+                  : `Aucun résultat pour « ${query} ».`}
+          </p>
+        ) : null}
+        {searchHits.length > 0 ? (
+          <ul className="max-h-64 overflow-auto text-sm">
+            {searchHits.map((hit) => (
+              <li key={hit.document.id}>
+                <button
+                  type="button"
+                  className="w-full rounded px-1 py-1 text-left hover:bg-[var(--surface-hover)]"
+                  onClick={() => {
+                    selectDocument(hit.document.id);
+                    setQuery("");
+                  }}
+                >
+                  <div className="font-medium">{hit.document.title}</div>
+                  <div className="text-sm text-[var(--ink-muted)]">
+                    {documentTrail(localeDocs, hit.document.id)
+                      .map((d) => d.title)
+                      .join(" / ")}
+                  </div>
+                  <div className="line-clamp-2 text-[var(--ink-muted)]">
+                    {hit.snippet}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            className="rounded-md bg-[var(--ink)] px-2 py-1.5 text-xs text-[var(--bg)]"
+            onClick={() => void createDoc(null)}
+          >
+            + Page
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-[var(--line)] px-2 py-1.5 text-xs"
+            onClick={() =>
+              void createDoc(null, {
+                title: "Nouvelle catégorie",
+                kind: "category",
+              })
+            }
+          >
+            + Catégorie
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto p-2">
+        <p className="mb-1 px-2 text-[10px] text-[var(--ink-faint)]">
+          Classement : glisser ou Plus → Déplacer
+        </p>
+        {tree.length === 0 ? (
+          <p className="px-2 text-sm text-[var(--ink-faint)]">
+            Aucun document en « {locale} ». Créez une page ou changez de langue.
+          </p>
+        ) : (
+          <DocTree
+            nodes={tree}
+            activeId={activeId}
+            baseHref={() => "#"}
+            linkMode="button"
+            onSelect={selectDocument}
+            onReorder={(a, b, pos) => void onReorder(a, b, pos)}
+          />
+        )}
+      </div>
+    </>
+  );
+  const sidePanelContent = active ? (
+    <SidePanel
+      tab={sideTab}
+      onTabChange={(tab) => {
+        setSideTab(tab);
+        if (tab !== "ai") setAiExpanded(false);
+      }}
+      content={active.content}
+      document={active}
+      comments={docComments}
+      spaceId={payload.space.id}
+      spaceName={payload.space.name}
+      llmEnabled={llmEnabled}
+      aiExpanded={aiExpanded}
+      onAiExpandedChange={setAiExpanded}
+      onAddComment={(body) => void addComment(body)}
+      onToggleComment={(id, resolved) => void toggleComment(id, resolved)}
+      onPatchDocument={(patch) => void patchActive(patch)}
+      onJumpToHeading={jumpToHeading}
+      onInsertAiText={insertAiText}
+    />
+  ) : null;
 
   return (
-    <div className="flex h-[calc(100dvh-28px)] flex-col bg-[var(--bg)] text-[var(--ink)]">
+    <div
+      className="workspace-shell flex min-h-0 flex-1 flex-col bg-[var(--bg)] text-[var(--ink)]"
+      style={accentStyle(payload.space.accentColor, theme)}
+    >
       {notice ? (
         <div
           role="alert"
-          className="flex items-center gap-3 bg-red-50 px-4 py-2 text-sm text-red-800"
+          className="flex items-center gap-3 bg-[var(--danger-soft)] px-4 py-2 text-sm text-[var(--danger)]"
         >
           {notice}
           <button onClick={() => setNotice("")}>Fermer</button>
@@ -705,206 +1004,177 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
           ) : null}
         </div>
       ) : null}
-      <header className="flex min-h-12 flex-wrap shrink-0 items-center gap-3 border-b border-[var(--line)] px-4 py-2">
-        <button
-          type="button"
-          className="md:hidden"
-          aria-expanded={navigationOpen}
-          aria-controls="workspace-navigation"
-          onClick={() => setNavigationOpen(!navigationOpen)}
-        >
-          Documents
-        </button>
-        <Link
-          href="/"
-          className="font-[family-name:var(--font-display)] text-lg tracking-tight"
-        >
-          Documentalist
-        </Link>
-        <select
-          className="max-w-[180px] rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-sm"
-          value={payload.space.id}
-          onChange={(e) => void reloadSpace(e.target.value)}
-          title="Choisir un Space"
-        >
-          {payload.spaces.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs"
-          value={payload.space.id}
-          onChange={(e) => void reloadSpace(e.target.value)}
-          title="Version documentaire"
-        >
-          {versionSpaces.map((s) => (
-            <option key={s.id} value={s.id}>
-              Version {s.versionLabel}
-              {s.isMainVersion ? " · principale" : ""}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs"
-          value={locale}
-          onChange={(e) => {
-            const next = e.target.value;
-            setLocale(next);
-            const docs = payload.documents.filter(
-              (d) => (d.locale || "en") === next,
-            );
-            setActiveId(
-              docs.find((d) => d.kind === "page")?.id ?? docs[0]?.id ?? null,
-            );
-          }}
-          title="Langue d’édition"
-        >
-          {(payload.space.locales ?? [locale]).map((l) => (
-            <option key={l} value={l}>
-              Langue {l}
-            </option>
-          ))}
-        </select>
-
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-[var(--ink-faint)]">{saveLabel}</span>
-          <span
-            className={[
-              "rounded-md px-2 py-0.5 text-[11px] font-medium",
-              dirty
-                ? "bg-[#8B691422] text-[#8B6914]"
-                : "bg-[var(--accent-soft)] text-[var(--accent)]",
-            ].join(" ")}
+      <header className="workspace-header shrink-0 border-b border-[var(--line)]">
+        <div className="workspace-header-main">
+          <div className="workspace-context flex min-w-0 flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="secondary-button md:hidden"
+              aria-haspopup="dialog"
+              aria-expanded={navigationOpen}
+              onClick={() => setNavigationOpen(true)}
+            >
+              Documents
+            </button>
+            <Link
+              href="/"
+              className="mr-2 font-[family-name:var(--font-display)] text-lg tracking-tight"
+            >
+              Documentalist
+            </Link>
+            <select
+              aria-label="Espace de documentation"
+              className="workspace-select"
+              value={payload.space.id}
+              onChange={(e) => void reloadSpace(e.target.value)}
+            >
+              {payload.spaces.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Version documentaire"
+              className="workspace-select"
+              value={payload.space.id}
+              onChange={(e) => void reloadSpace(e.target.value)}
+            >
+              {versionSpaces.map((s) => (
+                <option key={s.id} value={s.id}>
+                  Version {s.versionLabel}
+                  {s.isMainVersion ? " · principale" : ""}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Langue d’édition"
+              className="workspace-select"
+              value={locale}
+              onChange={(e) => {
+                const next = e.target.value;
+                setLocale(next);
+                const docs = payload.documents.filter(
+                  (d) => (d.locale || "en") === next,
+                );
+                setActiveId(
+                  docs.find((d) => d.kind === "page")?.id ??
+                    docs[0]?.id ??
+                    null,
+                );
+              }}
+            >
+              {payload.space.locales.map((l) => (
+                <option key={l} value={l}>
+                  Langue {l}
+                </option>
+              ))}
+            </select>
+          </div>
+          <AccountNavigation user={account} />
+        </div>
+        <div className="workspace-header-actions flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <div
+            role="status"
+            aria-atomic="true"
+            className="flex flex-wrap gap-x-3 gap-y-1 text-sm"
           >
-            {dirty ? "Modifs non publiées" : "À jour"}
-          </span>
+            <span className="text-[var(--ink-muted)]">{saveLabel}</span>
+            <span
+              className={
+                dirty
+                  ? "font-medium text-[var(--warning)]"
+                  : "text-[var(--ink-muted)]"
+              }
+            >
+              {dirty
+                ? "Modifications à publier"
+                : payload.space.publishedAt
+                  ? "Version publiée à jour"
+                  : "Espace non publié"}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden items-center gap-2 md:flex">
+              {workspaceTools}
+            </div>
+            <details className="relative md:hidden">
+              <summary className="secondary-button">Actions</summary>
+              <div className="absolute right-0 top-full z-30 mt-2 flex min-w-44 flex-col gap-2 rounded-md border border-[var(--control-line)] bg-[var(--surface)] p-2">
+                {workspaceTools}
+              </div>
+            </details>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={publishing}
+              onClick={() => void publish()}
+            >
+              {publishing ? "Publication…" : "Publier"}
+            </button>
+          </div>
+        </div>
+      </header>
+      {readingMode ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-2">
+          <span>Mode lecture</span>
           <button
             type="button"
-            onClick={() => setToolsOpen(true)}
-            className="rounded-md border border-[var(--line)] px-2.5 py-1 text-xs hover:bg-[var(--surface-hover)]"
+            className="secondary-button"
+            onClick={() => updateAppearance({ readingMode: false })}
           >
-            Outils
+            Revenir à la rédaction
           </button>
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            disabled={!isAdmin}
-            title={!isAdmin ? "Réservé aux administrateurs" : undefined}
-            className="rounded-md border border-[var(--line)] px-2.5 py-1 text-xs hover:bg-[var(--surface-hover)]"
-          >
-            Paramètres
-          </button>
+        </div>
+      ) : null}
+      {operationStatus ? (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] px-4 py-2 text-sm"
+        >
+          <span>{operationStatus}</span>
           {payload.space.publishedAt ? (
             <Link
               href={`/p/${payload.space.slug}?lang=${locale}`}
-              className="rounded-md border border-[var(--line)] px-2.5 py-1 text-xs hover:bg-[var(--surface-hover)]"
-              target="_blank"
+              className="underline"
             >
-              Voir le site
+              Consulter le portail
             </Link>
           ) : null}
           <button
             type="button"
-            onClick={() => void publish()}
-            className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            className="ml-auto secondary-button"
+            onClick={() => setOperationStatus("")}
+            aria-label="Masquer la confirmation"
           >
-            Publier
+            Fermer
           </button>
         </div>
-      </header>
+      ) : null}
 
       <div className="flex min-h-0 flex-1">
-        <aside
+        <nav
           id="workspace-navigation"
-          className={`${navigationOpen ? "flex absolute z-30 top-32 bottom-0 left-0" : "hidden"} md:static md:flex w-[260px] shrink-0 flex-col border-r border-[var(--line)] bg-[var(--surface)]`}
+          aria-label="Documents de l’espace"
+          className="workspace-navigation hidden w-[260px] shrink-0 flex-col border-r border-[var(--line)] bg-[var(--surface)] md:flex"
         >
-          <div className="space-y-2 border-b border-[var(--line)] p-3">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Rechercher…"
-              className="w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-sm"
-            />
-            {searchHits.length > 0 ? (
-              <ul className="max-h-36 overflow-auto text-xs">
-                {searchHits.map((hit) => (
-                  <li key={hit.document.id}>
-                    <button
-                      type="button"
-                      className="w-full rounded px-1 py-1 text-left hover:bg-[var(--surface-hover)]"
-                      onClick={() => {
-                        setActiveId(hit.document.id);
-                        setQuery("");
-                      }}
-                    >
-                      <div className="font-medium">{hit.document.title}</div>
-                      <div className="truncate text-[var(--ink-faint)]">
-                        {hit.snippet}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <div className="grid grid-cols-2 gap-1">
-              <button
-                type="button"
-                className="rounded-md bg-[var(--ink)] px-2 py-1.5 text-xs text-[var(--bg)]"
-                onClick={() => void createDoc(null)}
-              >
-                + Page
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-[var(--line)] px-2 py-1.5 text-xs"
-                onClick={() =>
-                  void createDoc(null, {
-                    title: "Nouvelle catégorie",
-                    kind: "category",
-                  })
-                }
-              >
-                + Catégorie
-              </button>
-            </div>
-          </div>
+          {navigationContent}
+        </nav>
 
-          <div className="flex-1 overflow-auto p-2">
-            <p className="mb-1 px-2 text-[10px] text-[var(--ink-faint)]">
-              Glisser pour réordonner
-            </p>
-            {tree.length === 0 ? (
-              <p className="px-2 text-sm text-[var(--ink-faint)]">
-                Aucun document en « {locale} ». Créez une page ou changez de
-                langue.
-              </p>
-            ) : (
-              <DocTree
-                nodes={tree}
-                activeId={activeId}
-                baseHref={() => "#"}
-                linkMode="button"
-                onSelect={(id) => {
-                  setActiveId(id);
-                  setPreview(false);
-                }}
-                onReorder={(a, b, pos) => void onReorder(a, b, pos)}
-              />
-            )}
-          </div>
-        </aside>
-
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
+        >
           {active && editorContent ? (
             <>
-              <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-5 py-3">
-                <div className="min-w-0 flex-1">
+              <div className="document-heading flex flex-wrap items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
+                <div className="document-title min-w-0 flex-1">
                   <input
-                    className="w-full bg-transparent font-[family-name:var(--font-display)] text-2xl tracking-tight outline-none"
+                    aria-label="Titre du document"
+                    className="w-full bg-transparent font-[family-name:var(--font-display)] text-2xl tracking-tight"
                     value={active.title}
-                    disabled={preview}
+                    disabled={preview || readingMode}
                     onChange={(e) => {
                       const title = e.target.value;
                       setPayload((prev) => ({
@@ -927,7 +1197,18 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
                     {active.markdownFormat ? ` · ${active.markdownFormat}` : ""}
                   </p>
                 </div>
-                <div className="relative flex shrink-0 items-center gap-2">
+                <div
+                  ref={menuRef}
+                  className="document-actions relative flex flex-wrap items-center gap-2"
+                >
+                  <button
+                    type="button"
+                    className="secondary-button lg:hidden"
+                    aria-haspopup="dialog"
+                    onClick={() => setPagePanelOpen(true)}
+                  >
+                    Panneau de page
+                  </button>
                   <button
                     type="button"
                     className={[
@@ -950,17 +1231,31 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
                   <button
                     type="button"
                     className="rounded-md border border-[var(--line)] px-2 py-1 text-xs"
+                    ref={menuButtonRef}
                     onClick={() => setMenuOpen((v) => !v)}
                     aria-expanded={menuOpen}
-                    aria-haspopup="menu"
+                    aria-controls="document-actions"
                   >
                     Plus
                   </button>
                   {menuOpen ? (
                     <div
-                      role="menu"
-                      className="absolute right-0 top-9 z-30 max-h-80 w-56 overflow-auto rounded-md border border-[var(--line)] bg-[var(--surface)] py-1 text-sm shadow-lg"
+                      id="document-actions"
+                      aria-label="Actions du document"
+                      className="document-menu absolute right-0 top-full z-30 mt-2 max-h-80 w-64 overflow-auto rounded-md border border-[var(--line)] bg-[var(--surface)] py-1 text-sm shadow-lg"
                     >
+                      <button
+                        type="button"
+                        className="block w-full px-3 py-2 text-left hover:bg-[var(--surface-hover)]"
+                        onClick={() => {
+                          setMoveTarget("root");
+                          setMovePosition("after");
+                          setMenuOpen(false);
+                          setMoveOpen(true);
+                        }}
+                      >
+                        Déplacer…
+                      </button>
                       <button
                         type="button"
                         className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
@@ -1014,7 +1309,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
                         ))}
                       <button
                         type="button"
-                        className="block w-full px-3 py-1.5 text-left text-[#A32D2D] hover:bg-[var(--surface-hover)]"
+                        className="block w-full px-3 py-1.5 text-left text-[var(--danger)] hover:bg-[var(--surface-hover)]"
                         onClick={() => void removeDoc()}
                       >
                         Supprimer
@@ -1051,50 +1346,32 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
                 <div
                   className={[
                     "flex min-w-0 flex-col",
-                    aiExpanded && sideTab === "ai" ? "hidden xl:flex xl:w-[38%] xl:min-w-0" : "flex-1",
+                    !readingMode && aiExpanded && sideTab === "ai"
+                      ? "flex-1 xl:w-[38%] xl:flex-none xl:min-w-0"
+                      : "flex-1",
                   ].join(" ")}
                 >
                   <DocEditor
                     key={active.id}
                     documentId={active.id}
                     content={editorContent}
-                    editable={!preview}
-                    showToolbar={!preview}
+                    editable={!preview && !readingMode}
+                    showToolbar={!preview && !readingMode}
                     onChange={onEditorChange}
+                    locale={locale}
                   />
                 </div>
                 <div
                   className={[
-                    "hidden shrink-0 lg:block",
+                    "workspace-side-panel hidden shrink-0 lg:block",
                     sideTab === "ai"
                       ? aiExpanded
-                        ? "w-full min-w-0 flex-1 xl:w-[62%]"
+                        ? "w-[min(420px,42vw)] min-w-0 xl:w-[62%] xl:flex-1"
                         : "w-[min(420px,42vw)]"
-                      : "w-[250px]",
+                      : "w-[320px]",
                   ].join(" ")}
                 >
-                  <SidePanel
-                    tab={sideTab}
-                    onTabChange={(tab) => {
-                      setSideTab(tab);
-                      if (tab !== "ai") setAiExpanded(false);
-                    }}
-                    content={active.content}
-                    document={active}
-                    comments={docComments}
-                    spaceId={payload.space.id}
-                    spaceName={payload.space.name}
-                    llmEnabled={llmEnabled}
-                    aiExpanded={aiExpanded}
-                    onAiExpandedChange={setAiExpanded}
-                    onAddComment={(body) => void addComment(body)}
-                    onToggleComment={(id, resolved) =>
-                      void toggleComment(id, resolved)
-                    }
-                    onPatchDocument={(patch) => void patchActive(patch)}
-                    onJumpToHeading={jumpToHeading}
-                    onInsertAiText={insertAiText}
-                  />
+                  {sidePanelContent}
                 </div>
               </div>
             </>
@@ -1103,7 +1380,7 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
               <p>Sélectionnez une page ou créez-en une.</p>
               <button
                 type="button"
-                className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-white"
+                className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-[var(--on-accent)]"
                 onClick={() => void createDoc(null)}
               >
                 Créer une page
@@ -1119,406 +1396,495 @@ export function WorkspaceApp({ initial, isAdmin }: Props) {
         onImported={(space) => void reloadSpace(space.id)}
       />
 
-      {toolsOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
-          <div className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-[family-name:var(--font-display)] text-xl">
-                Outils
-              </h2>
-              <button
-                type="button"
-                className="text-sm text-[var(--ink-muted)]"
-                onClick={() => setToolsOpen(false)}
-              >
-                Fermer
-              </button>
-            </div>
-
-            <section className="mb-5 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
-                Importer
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
-                  onClick={() => void createSpace()}
-                >
-                  Nouveau Space
-                </button>
-                <button
-                  type="button"
-                  className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
-                  onClick={() => setGithubOpen(true)}
-                >
-                  Depuis GitHub
-                </button>
-                <button
-                  type="button"
-                  className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  Fichier Markdown
-                </button>
-                <button
-                  type="button"
-                  className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
-                  onClick={() => void createVersion()}
-                >
-                  Snapshot de version
-                </button>
-              </div>
-              <label className="block text-xs text-[var(--ink-muted)]">
-                Format Markdown à l’import
-                <select
-                  className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-sm"
-                  value={mdFormat}
-                  onChange={(e) =>
-                    setMdFormat(e.target.value as typeof mdFormat)
-                  }
-                >
-                  <option value="auto">Auto-détection</option>
-                  <option value="commonmark">CommonMark</option>
-                  <option value="gfm">GFM (tables, tâches)</option>
-                  <option value="mdx">MDX</option>
-                  <option value="obsidian">Obsidian</option>
-                </select>
-              </label>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".md,.mdx,.markdown,text/markdown"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void importMarkdownFile(file);
-                  e.target.value = "";
-                }}
-              />
-            </section>
-
-            <section className="mb-5 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
-                Modèles
-              </h3>
-              {(payload.templates ?? []).map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="mb-1 block w-full rounded-md border border-[var(--line)] px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)]"
-                  onClick={() =>
-                    void createDoc(null, {
-                      title: t.name,
-                      content: structuredClone(t.content),
-                    })
-                  }
-                >
-                  <div className="font-medium">{t.name}</div>
-                  <div className="text-xs text-[var(--ink-faint)]">
-                    {t.description}
-                  </div>
-                </button>
-              ))}
-            </section>
-
-            <section className="mb-5 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
-                Extraits réutilisables
-              </h3>
-              <div className="space-y-1 text-xs text-[var(--ink-muted)]">
-                {payload.variables.map((v) => (
-                  <div
-                    key={v.id}
-                    className="flex justify-between gap-2 rounded border border-[var(--line)] px-2 py-1"
-                  >
-                    <code>{`{{${v.key}}}`}</code>
-                    <span className="truncate">{v.value}</span>
-                  </div>
-                ))}
-              </div>
-              {payload.snippets.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  className="block w-full rounded-md border border-[var(--line)] px-3 py-1.5 text-left text-sm hover:bg-[var(--surface-hover)]"
-                  onClick={() => {
-                    insertSnippet(s);
-                    setToolsOpen(false);
-                  }}
-                >
-                  Insérer : {s.name}
-                </button>
-              ))}
-            </section>
-
-            {isAdmin ? (
-              <IntegrationsPanel
-                onImported={(id) => {
-                  setToolsOpen(false);
-                  void reloadSpace(id);
-                }}
-                integrations={payload.integrations ?? []}
-                spaceId={payload.space.id}
-                onChange={(integrations) =>
-                  setPayload((prev) => ({ ...prev, integrations }))
-                }
-                onOpenGithubImport={() => {
-                  setToolsOpen(false);
-                  setGithubOpen(true);
-                }}
-              />
-            ) : null}
+      <Dialog
+        open={toolsOpen}
+        onClose={() => setToolsOpen(false)}
+        title="Outils"
+      >
+        <section className="mb-5 space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
+            Importer
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
+              onClick={() => void createSpace()}
+            >
+              Nouvel espace
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
+              onClick={() => {
+                setToolsOpen(false);
+                setGithubOpen(true);
+              }}
+            >
+              Depuis GitHub
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
+              onClick={() => fileRef.current?.click()}
+            >
+              Fichier Markdown
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
+              onClick={() => void createVersion()}
+            >
+              Nouvelle version
+            </button>
           </div>
-        </div>
-      ) : null}
+          <label className="block text-xs text-[var(--ink-muted)]">
+            Format Markdown à l’import
+            <select
+              className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-sm"
+              value={mdFormat}
+              onChange={(e) => setMdFormat(e.target.value as typeof mdFormat)}
+            >
+              <option value="auto">Auto-détection</option>
+              <option value="commonmark">CommonMark</option>
+              <option value="gfm">GFM (tables, tâches)</option>
+              <option value="mdx">MDX</option>
+              <option value="obsidian">Obsidian</option>
+            </select>
+          </label>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".md,.mdx,.markdown,text/markdown"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void importMarkdownFile(file);
+              e.target.value = "";
+            }}
+          />
+        </section>
 
-      {settingsOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-[family-name:var(--font-display)] text-xl">
-                Paramètres
-              </h2>
-              <button
-                type="button"
-                className="text-sm text-[var(--ink-muted)]"
-                onClick={() => setSettingsOpen(false)}
-              >
-                Fermer
-              </button>
-            </div>
-            <div className="mb-4 flex gap-1 border-b border-[var(--line)] text-xs font-medium">
-              {(
-                [
-                  ["space", "Space"],
-                  ["org-llm", "IA (org)"],
-                  ["space-llm", "IA (Space)"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={[
-                    "px-3 py-2",
-                    settingsTab === id
-                      ? "border-b-2 border-[var(--accent)] text-[var(--ink)]"
-                      : "text-[var(--ink-faint)]",
-                  ].join(" ")}
-                  onClick={() => setSettingsTab(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+        <section className="mb-5 space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
+            Modèles
+          </h3>
+          {(payload.templates ?? []).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className="mb-1 block w-full rounded-md border border-[var(--line)] px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)]"
+              onClick={() =>
+                void createDoc(null, {
+                  title: t.name,
+                  content: structuredClone(t.content),
+                })
+              }
+            >
+              <div className="font-medium">{t.name}</div>
+              <div className="text-xs text-[var(--ink-faint)]">
+                {t.description}
+              </div>
+            </button>
+          ))}
+        </section>
 
-            {settingsTab === "space" ? (
-              <form
-                className="flex flex-col gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const fd = new FormData(e.currentTarget);
-                  const locales = String(fd.get("locales") ?? "en")
-                    .split(/[,\s]+/)
-                    .map((x) => x.trim())
-                    .filter(Boolean);
-                  void saveSpaceSettings({
-                    name: String(fd.get("name") ?? ""),
-                    description: String(fd.get("description") ?? ""),
-                    accentColor: String(fd.get("accentColor") ?? "#0F6E56"),
-                    accessPassword:
-                      String(fd.get("accessPassword") ?? "") || null,
-                    isPublic: fd.get("isPublic") === "on",
-                    defaultLocale: String(fd.get("defaultLocale") ?? "en"),
-                    locales: locales.length ? locales : ["en"],
-                    versionLabel: String(fd.get("versionLabel") ?? "current"),
-                  });
-                }}
+        <section className="mb-5 space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
+            Extraits réutilisables
+          </h3>
+          <div className="space-y-1 text-xs text-[var(--ink-muted)]">
+            {payload.variables.map((v) => (
+              <div
+                key={v.id}
+                className="flex justify-between gap-2 rounded border border-[var(--line)] px-2 py-1"
               >
-                <label className="text-sm">
-                  Nom
-                  <input
-                    name="name"
-                    defaultValue={payload.space.name}
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  />
-                </label>
-                <label className="text-sm">
-                  Description
-                  <input
-                    name="description"
-                    defaultValue={payload.space.description}
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  />
-                </label>
-                <label className="text-sm">
-                  Libellé de version
-                  <input
-                    name="versionLabel"
-                    defaultValue={payload.space.versionLabel ?? "current"}
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="text-sm">
-                    Langue par défaut
-                    <input
-                      name="defaultLocale"
-                      defaultValue={payload.space.defaultLocale ?? "en"}
-                      className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                    />
-                  </label>
-                  <label className="text-sm">
-                    Langues
-                    <input
-                      name="locales"
-                      defaultValue={(
-                        payload.space.locales ?? ["en", "fr"]
-                      ).join(", ")}
-                      className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                    />
-                  </label>
-                </div>
-                <label className="text-sm">
-                  Couleur
-                  <input
-                    name="accentColor"
-                    type="color"
-                    defaultValue={payload.space.accentColor}
-                    className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-[var(--bg)]"
-                  />
-                </label>
-                <label className="text-sm">
-                  Mot de passe du site
-                  <input
-                    name="accessPassword"
-                    type="password"
-                    defaultValue={payload.space.accessPassword ?? ""}
-                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-                  />
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    name="isPublic"
-                    type="checkbox"
-                    defaultChecked={payload.space.isPublic}
-                  />
-                  Public
-                </label>
-                <div className="mt-2 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
-                    onClick={() => setSettingsOpen(false)}
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-white"
-                  >
-                    Enregistrer
-                  </button>
-                </div>
-              </form>
-            ) : null}
+                <code>{`{{${v.key}}}`}</code>
+                <span className="truncate">{v.value}</span>
+              </div>
+            ))}
+          </div>
+          {payload.snippets.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="block w-full rounded-md border border-[var(--line)] px-3 py-1.5 text-left text-sm hover:bg-[var(--surface-hover)]"
+              onClick={() => {
+                insertSnippet(s);
+                setToolsOpen(false);
+              }}
+            >
+              Insérer : {s.name}
+            </button>
+          ))}
+        </section>
 
-            {settingsTab === "org-llm" ? (
-              <form
-                className="flex flex-col gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void saveOrgLlm(llmFromForm(new FormData(e.currentTarget)));
-                }}
-              >
-                <p className="text-xs text-[var(--ink-muted)]">
-                  Configuration LLM par défaut pour toute l’organisation
-                  (OpenAI, Anthropic, Ollama, LM Studio, vLLM…).
-                </p>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    name="enabled"
-                    type="checkbox"
-                    defaultChecked={orgLlm.enabled}
-                  />
-                  Activer l’assistant IA
-                </label>
-                <LlmSettingsFields initial={orgLlm} />
-                <div className="mt-2 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
-                    onClick={() => setSettingsOpen(false)}
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-white"
-                  >
-                    Enregistrer
-                  </button>
-                </div>
-              </form>
-            ) : null}
+        {isAdmin ? (
+          <IntegrationsPanel
+            onImported={(id) => {
+              setToolsOpen(false);
+              void reloadSpace(id);
+            }}
+            integrations={payload.integrations ?? []}
+            spaceId={payload.space.id}
+            onChange={(integrations) =>
+              setPayload((prev) => ({ ...prev, integrations }))
+            }
+            onOpenGithubImport={() => {
+              setToolsOpen(false);
+              setGithubOpen(true);
+            }}
+          />
+        ) : null}
+      </Dialog>
 
-            {settingsTab === "space-llm" ? (
-              <form
-                className="flex flex-col gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const fd = new FormData(e.currentTarget);
-                  const useOverride = fd.get("override") === "on";
-                  if (!useOverride) {
-                    void saveSpaceSettings({ llm: null });
-                    return;
-                  }
-                  void saveSpaceSettings({ llm: llmFromForm(fd) });
-                }}
-              >
-                <p className="text-xs text-[var(--ink-muted)]">
-                  Surcharge optionnelle pour ce Space. Sinon, l’IA
-                  organisationnelle est utilisée.
-                </p>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    name="override"
-                    type="checkbox"
-                    defaultChecked={Boolean(spaceLlm)}
-                  />
-                  Utiliser une config dédiée à ce Space
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    name="enabled"
-                    type="checkbox"
-                    defaultChecked={spaceLlm?.enabled ?? false}
-                  />
-                  Activer pour ce Space
-                </label>
-                <LlmSettingsFields
-                  initial={spaceLlm ?? { ...orgLlm, enabled: false }}
+      <Dialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        title="Paramètres"
+      >
+        <TabList
+          id="space-settings"
+          label="Réglages de l’espace"
+          value={settingsTab}
+          onChange={setSettingsTab}
+          items={[
+            ["space", "Espace"],
+            ["org-llm", "IA (organisation)"],
+            ["space-llm", "IA (espace)"],
+          ]}
+        />
+        <div
+          role="tabpanel"
+          id="space-settings-panel"
+          aria-labelledby={`space-settings-${settingsTab}`}
+          tabIndex={0}
+          className="pt-4"
+        >
+          {settingsTab === "space" ? (
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                const locales = String(fd.get("locales") ?? "en")
+                  .split(/[,\s]+/)
+                  .map((x) => x.trim())
+                  .filter(Boolean);
+                void saveSpaceSettings({
+                  name: String(fd.get("name") ?? ""),
+                  description: String(fd.get("description") ?? ""),
+                  accentColor: String(fd.get("accentColor") ?? "#0F6E56"),
+                  accessPassword:
+                    String(fd.get("accessPassword") ?? "") || null,
+                  isPublic: fd.get("isPublic") === "on",
+                  defaultLocale: String(fd.get("defaultLocale") ?? "en"),
+                  locales: locales.length ? locales : ["en"],
+                  versionLabel: String(fd.get("versionLabel") ?? "current"),
+                });
+              }}
+            >
+              <label className="text-sm">
+                Nom
+                <input
+                  name="name"
+                  defaultValue={payload.space.name}
+                  className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
                 />
-                <div className="mt-2 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
-                    onClick={() => setSettingsOpen(false)}
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-white"
-                  >
-                    Enregistrer
-                  </button>
-                </div>
-              </form>
-            ) : null}
-          </div>
+              </label>
+              <label className="text-sm">
+                Description
+                <input
+                  name="description"
+                  defaultValue={payload.space.description}
+                  className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                />
+              </label>
+              <label className="text-sm">
+                Libellé de version
+                <input
+                  name="versionLabel"
+                  defaultValue={payload.space.versionLabel ?? "current"}
+                  className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-sm">
+                  Langue par défaut
+                  <input
+                    name="defaultLocale"
+                    defaultValue={payload.space.defaultLocale ?? "en"}
+                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                  />
+                </label>
+                <label className="text-sm">
+                  Langues
+                  <input
+                    name="locales"
+                    defaultValue={(payload.space.locales ?? ["en", "fr"]).join(
+                      ", ",
+                    )}
+                    className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                  />
+                </label>
+              </div>
+              <label className="text-sm">
+                Couleur
+                <input
+                  name="accentColor"
+                  type="color"
+                  defaultValue={payload.space.accentColor}
+                  className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-[var(--bg)]"
+                />
+              </label>
+              <label className="text-sm">
+                Mot de passe du site
+                <input
+                  name="accessPassword"
+                  type="password"
+                  defaultValue={payload.space.accessPassword ?? ""}
+                  className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  name="isPublic"
+                  type="checkbox"
+                  defaultChecked={payload.space.isPublic}
+                />
+                Public
+              </label>
+              <div className="mt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-[var(--on-accent)]"
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {settingsTab === "org-llm" ? (
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveOrgLlm(llmFromForm(new FormData(e.currentTarget)));
+              }}
+            >
+              <p className="text-xs text-[var(--ink-muted)]">
+                Configuration LLM par défaut pour toute l’organisation (OpenAI,
+                Anthropic, Ollama, LM Studio, vLLM…).
+              </p>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  name="enabled"
+                  type="checkbox"
+                  defaultChecked={orgLlm.enabled}
+                />
+                Activer l’assistant IA
+              </label>
+              <LlmSettingsFields initial={orgLlm} />
+              <div className="mt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-[var(--on-accent)]"
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {settingsTab === "space-llm" ? (
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                const useOverride = fd.get("override") === "on";
+                if (!useOverride) {
+                  void saveSpaceSettings({ llm: null });
+                  return;
+                }
+                void saveSpaceSettings({ llm: llmFromForm(fd) });
+              }}
+            >
+              <p className="text-xs text-[var(--ink-muted)]">
+                Surcharge optionnelle pour cet espace. Sinon, l’IA
+                organisationnelle est utilisée.
+              </p>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  name="override"
+                  type="checkbox"
+                  defaultChecked={Boolean(spaceLlm)}
+                />
+                Utiliser une configuration dédiée à cet espace
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  name="enabled"
+                  type="checkbox"
+                  defaultChecked={spaceLlm?.enabled ?? false}
+                />
+                Activer pour cet espace
+              </label>
+              <LlmSettingsFields
+                initial={spaceLlm ?? { ...orgLlm, enabled: false }}
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-[var(--on-accent)]"
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+          ) : null}
         </div>
-      ) : null}
+      </Dialog>
+
+      <Dialog
+        open={navigationOpen}
+        onClose={() => setNavigationOpen(false)}
+        title="Documents"
+        className="navigation-dialog"
+      >
+        <nav
+          id="workspace-mobile-navigation"
+          aria-label="Documents de l’espace"
+        >
+          {navigationContent}
+        </nav>
+      </Dialog>
+      <Dialog
+        open={pagePanelOpen}
+        onClose={() => setPagePanelOpen(false)}
+        title="Panneau de page"
+        className="page-panel-dialog"
+      >
+        {sidePanelContent}
+      </Dialog>
+      <Dialog
+        open={moveOpen}
+        onClose={() => setMoveOpen(false)}
+        title="Déplacer le document"
+      >
+        <form
+          className="grid gap-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!active || moving) return;
+            setMoving(true);
+            try {
+              await onReorder(active.id, moveTarget, movePosition);
+              setMoveOpen(false);
+              window.requestAnimationFrame(() =>
+                document.getElementById("main-content")?.focus(),
+              );
+            } catch (error) {
+              setNotice(
+                error instanceof Error
+                  ? error.message
+                  : "Déplacement impossible.",
+              );
+            } finally {
+              setMoving(false);
+            }
+          }}
+        >
+          <p>Déplacer « {active?.title} » sans glisser-déposer.</p>
+          <label>
+            Destination
+            <select
+              aria-label="Destination"
+              value={moveTarget}
+              onChange={(e) => {
+                setMoveTarget(e.target.value);
+                if (
+                  localeDocs.find((d) => d.id === e.target.value)?.kind ===
+                  "link"
+                )
+                  setMovePosition("before");
+              }}
+            >
+              <option value="root">Fin de l’arborescence principale</option>
+              {localeDocs
+                .filter(
+                  (d) =>
+                    !documentTrail(localeDocs, d.id).some(
+                      (parent) => parent.id === activeId,
+                    ),
+                )
+                .map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {documentTrail(localeDocs, d.id)
+                      .map((p) => p.title)
+                      .join(" / ")}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            Position
+            <select
+              aria-label="Position"
+              value={movePosition}
+              disabled={moveTarget === "root"}
+              onChange={(e) =>
+                setMovePosition(e.target.value as typeof movePosition)
+              }
+            >
+              <option value="before">Avant cette page</option>
+              <option value="after">Après cette page</option>
+              <option
+                value="inside"
+                disabled={
+                  localeDocs.find((d) => d.id === moveTarget)?.kind === "link"
+                }
+              >
+                Dans cette page ou catégorie
+              </option>
+            </select>
+          </label>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setMoveOpen(false)}
+            >
+              Annuler
+            </button>
+            <button type="submit" className="primary-button" disabled={moving}>
+              {moving ? "Déplacement…" : "Déplacer"}
+            </button>
+          </div>
+        </form>
+      </Dialog>
     </div>
   );
 }

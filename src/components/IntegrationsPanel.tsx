@@ -178,7 +178,7 @@ export function IntegrationsPanel({
         <button
           type="button"
           disabled={busy}
-          className="rounded-md bg-[var(--accent)] px-2.5 py-1 text-xs text-white disabled:opacity-50"
+          className="rounded-md bg-[var(--accent)] px-2.5 py-1 text-xs text-[var(--on-accent)] disabled:opacity-50"
           onClick={() => void save()}
         >
           Enregistrer

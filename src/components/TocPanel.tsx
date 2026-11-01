@@ -12,7 +12,11 @@ export function TocPanel({ content, tags = [] }: Props) {
   const headings = extractHeadings(content);
 
   return (
-    <aside className="flex h-full flex-col border-l border-[var(--line)] bg-[var(--surface)]">
+    <nav
+      lang="fr"
+      aria-label="Sur cette page"
+      className="toc-panel flex h-full flex-col border-l border-[var(--line)] bg-[var(--surface)]"
+    >
       <p className="border-b border-[var(--line)] px-3 py-3 text-sm font-medium">
         Sommaire
       </p>
@@ -34,7 +38,7 @@ export function TocPanel({ content, tags = [] }: Props) {
               >
                 <a
                   href={`#section-${index}`}
-                  className="hover:text-[var(--accent)]"
+                  className="block min-h-9 rounded px-1 py-2 underline-offset-4 hover:text-[var(--accent)] hover:underline"
                 >
                   {h.text}
                 </a>
@@ -60,6 +64,6 @@ export function TocPanel({ content, tags = [] }: Props) {
           </div>
         ) : null}
       </div>
-    </aside>
+    </nav>
   );
 }

@@ -6,7 +6,11 @@ export default function Setup() {
   if (hasUsers()) redirect("/login");
   setupToken();
   return (
-    <main className="flex min-h-dvh items-center p-4">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="flex min-h-dvh items-center p-4"
+    >
       <AuthForm setup />
     </main>
   );
