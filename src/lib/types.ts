@@ -39,6 +39,26 @@ export type Organization = {
   id: string;
   name: string;
   llm: LlmSettings;
+  /** Bumps when the built-in Product docs guide is refreshed. */
+  productGuideVersion?: number;
+};
+
+/** Linked third-party import that can be re-synced into this Space. */
+export type SpaceImportSource = {
+  provider: "github" | "gitlab" | "notion";
+  /** owner/repo, GitLab path, or Notion workspace label */
+  repository: string;
+  branch: string;
+  /** Docs root inside the repo (ignored for Notion) */
+  path: string;
+  rootPageId?: string;
+  format: MarkdownFormat;
+  locale: string;
+  autoSync: boolean;
+  /** Minimum minutes between automatic syncs */
+  syncIntervalMinutes: number;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
 };
 
 export type Space = {
@@ -61,6 +81,8 @@ export type Space = {
   publishedSnapshot: PublishedSnapshot | null;
   /** null = inherit organization LLM settings */
   llm: LlmSettings | null;
+  /** Present when the Space was (or can be) filled from a remote docs source */
+  importSource: SpaceImportSource | null;
 };
 
 export type PublishedSnapshot = {

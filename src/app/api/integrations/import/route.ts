@@ -12,6 +12,8 @@ export const POST = secureRoute(async (request) => {
       path: z.string().max(500).default("docs"),
       rootPageId: z.string().max(100).optional(),
       spaceName: z.string().max(200).optional(),
+      autoSync: z.boolean().optional(),
+      syncIntervalMinutes: z.number().int().min(5).max(24 * 60).optional(),
     })
     .parse(await request.json());
   const integration = (await listIntegrations()).find(

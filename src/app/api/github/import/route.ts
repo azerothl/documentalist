@@ -14,6 +14,9 @@ async function handlePOST(request: Request) {
       format?: MarkdownFormat;
       locale?: string;
       useSavedToken?: boolean;
+      autoSync?: boolean;
+      syncIntervalMinutes?: number;
+      spaceId?: string;
     };
     if (!body.repository?.trim()) {
       return NextResponse.json(
@@ -37,6 +40,9 @@ async function handlePOST(request: Request) {
       spaceName: body.spaceName,
       format: body.format ?? "auto",
       locale: body.locale,
+      autoSync: body.autoSync,
+      syncIntervalMinutes: body.syncIntervalMinutes,
+      spaceId: body.spaceId,
     });
 
     return NextResponse.json(result, { status: 201 });

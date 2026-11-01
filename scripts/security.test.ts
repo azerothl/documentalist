@@ -105,6 +105,9 @@ test("Sécurité, publication et persistance", async (t) => {
         assert.ok(!serialized.includes("SECRET_VARIABLE"));
         assert.ok(!serialized.includes("apiKey"));
         assert.ok(!serialized.includes("accessPassword"));
+        assert.ok(!serialized.includes("private-key-never-in-client"));
+        if (published.accessPassword)
+          assert.ok(!serialized.includes(published.accessPassword));
       },
     );
     await t.test(

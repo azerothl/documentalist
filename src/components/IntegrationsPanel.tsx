@@ -15,6 +15,13 @@ type Props = {
   onImported: (spaceId: string) => void;
 };
 
+const INTERVALS = [
+  { minutes: 30, label: "30 min" },
+  { minutes: 60, label: "1 h" },
+  { minutes: 360, label: "6 h" },
+  { minutes: 1440, label: "24 h" },
+];
+
 export function IntegrationsPanel({
   integrations,
   spaceId,
@@ -25,6 +32,8 @@ export function IntegrationsPanel({
   const [provider, setProvider] = useState<IntegrationProvider>("github");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [autoSync, setAutoSync] = useState(true);
+  const [syncIntervalMinutes, setSyncIntervalMinutes] = useState(60);
   const catalog = INTEGRATION_CATALOG.find((c) => c.provider === provider)!;
   const [form, setForm] = useState<Record<string, string>>({});
 
@@ -103,12 +112,19 @@ export function IntegrationsPanel({
       const res = await fetch("/api/integrations/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, repository, branch, path }),
+        body: JSON.stringify({
+          provider,
+          repository,
+          branch,
+          path,
+          autoSync,
+          syncIntervalMinutes,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setMessage(
-        `${data.imported} pages importées${data.warnings?.length ? ` · Blocs non convertis : ${data.warnings.join(", ")}` : ""}`,
+        `${data.imported} pages importées${data.warnings?.length ? ` · Blocs non convertis : ${data.warnings.join(", ")}` : ""}${autoSync ? " · sync auto activée" : ""}`,
       );
       onImported(data.space.id);
     } catch (e) {
@@ -122,6 +138,10 @@ export function IntegrationsPanel({
     <div className="flex flex-col gap-3 text-sm">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
         Intégrations
+      </p>
+      <p className="text-xs text-[var(--ink-muted)]">
+        La synchronisation des docs importés se configure en haut de cette
+        fenêtre (section Synchronisation).
       </p>
       <div className="flex flex-wrap gap-1">
         {INTEGRATION_CATALOG.map((c) => (
@@ -164,6 +184,36 @@ export function IntegrationsPanel({
           />
         </label>
       ))}
+      {provider === "gitlab" || provider === "notion" ? (
+        <div className="flex flex-col gap-2 rounded-md border border-[var(--line)] px-2 py-2 text-xs">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={autoSync}
+              onChange={(e) => setAutoSync(e.target.checked)}
+            />
+            Sync auto après import
+          </label>
+          {autoSync ? (
+            <label>
+              Intervalle
+              <select
+                className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1"
+                value={syncIntervalMinutes}
+                onChange={(e) =>
+                  setSyncIntervalMinutes(Number(e.target.value))
+                }
+              >
+                {INTERVALS.map((opt) => (
+                  <option key={opt.minutes} value={opt.minutes}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-1">
         {provider === "gitlab" || provider === "notion" ? (
           <button
