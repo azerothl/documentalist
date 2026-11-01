@@ -9,6 +9,8 @@ async function handlePOST(request: Request) {
       repository?: string;
       branch?: string;
       path?: string;
+      learnPath?: string;
+      blogPath?: string;
       token?: string;
       spaceName?: string;
       format?: MarkdownFormat;
@@ -36,6 +38,8 @@ async function handlePOST(request: Request) {
       repository: body.repository.trim(),
       branch: body.branch,
       path: body.path,
+      learnPath: body.learnPath,
+      blogPath: body.blogPath,
       token,
       spaceName: body.spaceName,
       format: body.format ?? "auto",

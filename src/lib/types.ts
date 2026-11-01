@@ -1,5 +1,21 @@
 export type DocumentKind = "page" | "category" | "link";
 
+/** Portal tab a document belongs to (react.dev-style Learn / Reference / Blog). */
+export type DocSection = "learn" | "reference" | "blog";
+
+export const DOC_SECTIONS: { id: DocSection; label: string }[] = [
+  { id: "learn", label: "Learn" },
+  { id: "reference", label: "Reference" },
+  { id: "blog", label: "Blog" },
+];
+
+/** Documents created before sections existed belong to Reference. */
+export function docSection(doc: { section?: DocSection | null }): DocSection {
+  return doc.section === "learn" || doc.section === "blog"
+    ? doc.section
+    : "reference";
+}
+
 export type MarkdownFormat = "auto" | "commonmark" | "gfm" | "mdx" | "obsidian";
 
 export type IntegrationProvider =
@@ -19,12 +35,7 @@ export type TipTapNode = {
 };
 
 export type LlmProvider =
-  | "openai"
-  | "anthropic"
-  | "ollama"
-  | "lmstudio"
-  | "vllm"
-  | "compatible";
+  "openai" | "anthropic" | "ollama" | "lmstudio" | "vllm" | "compatible";
 
 export type LlmSettings = {
   enabled: boolean;
@@ -49,8 +60,12 @@ export type SpaceImportSource = {
   /** owner/repo, GitLab path, or Notion workspace label */
   repository: string;
   branch: string;
-  /** Docs root inside the repo (ignored for Notion) */
+  /** Docs root inside the repo, feeds the Reference tab (ignored for Notion) */
   path: string;
+  /** Optional folder feeding the Learn tab (guides, e-learning) */
+  learnPath?: string;
+  /** Optional folder feeding the Blog tab (release notes) */
+  blogPath?: string;
   rootPageId?: string;
   format: MarkdownFormat;
   locale: string;
@@ -108,6 +123,10 @@ export type DocumentRecord = {
   translationOf: string | null;
   /** Origin path when imported (e.g. docs/guide.md) */
   sourcePath: string | null;
+  /** Portal tab; absent on older documents (= Reference) */
+  section?: DocSection;
+  /** Publication date of a blog post (YYYY-MM-DD) */
+  date?: string | null;
   markdownFormat: MarkdownFormat | null;
   seoTitle: string | null;
   seoDescription: string | null;
