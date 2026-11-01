@@ -2,6 +2,15 @@ import { promises as fs } from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
 import { fetchGithubMarkdownFiles } from "./github";
+import {
+  buildLinkOrderMap,
+  compareImportEntries,
+  folderSortKey,
+  frontmatterOrder,
+  numericPrefixOrder,
+  sortImportFiles,
+  type ImportOrderEntry,
+} from "./import-order";
 import { dispatchPublishHooks, importOpenApiAsMarkdown } from "./integrations";
 import { parseMarkdown, repairTipTapDoc } from "./markdown";
 import { migrateStore } from "./migrate";
@@ -942,6 +951,42 @@ export async function importRepositoryFiles(
     let updated = 0;
     let skipped = 0;
     const seenPaths = new Set<string>();
+    const orderByPath = new Map<string, ImportOrderEntry>();
+    const frontmatterByPath = new Map<string, Record<string, string>>();
+    const parsedFiles: {
+      path: string;
+      content: string;
+      parsed: ReturnType<typeof parseMarkdown>;
+    }[] = [];
+
+    for (const file of github.files) {
+      try {
+        const parsed = parseMarkdown(file.content, input.format ?? "auto");
+        frontmatterByPath.set(file.path, parsed.frontmatter);
+        parsedFiles.push({ path: file.path, content: file.content, parsed });
+      } catch {
+        skipped += 1;
+      }
+    }
+
+    const orderedFiles = sortImportFiles(
+      parsedFiles.map((f) => ({ path: f.path, content: f.content })),
+      rootPrefix,
+      frontmatterByPath,
+    );
+    const parsedByPath = new Map(parsedFiles.map((f) => [f.path, f.parsed]));
+    const linkOrder = buildLinkOrderMap(orderedFiles, rootPrefix);
+    for (const file of orderedFiles) {
+      const base = file.path.split("/").pop() || file.path;
+      orderByPath.set(file.path, {
+        path: file.path,
+        linkIndex: linkOrder.has(file.path) ? linkOrder.get(file.path)! : null,
+        frontmatterOrder: frontmatterOrder(
+          frontmatterByPath.get(file.path) ?? {},
+        ),
+        numericPrefix: numericPrefixOrder(base),
+      });
+    }
 
     function ensureFolder(dirPath: string, parentId: string | null): string {
       if (!dirPath || dirPath === ".") return parentId ?? "";
@@ -1000,10 +1045,14 @@ export async function importRepositoryFiles(
       return folderId;
     }
 
-    for (const file of github.files) {
+    for (const file of orderedFiles) {
       try {
         seenPaths.add(file.path);
-        const parsed = parseMarkdown(file.content, input.format ?? "auto");
+        const parsed = parsedByPath.get(file.path);
+        if (!parsed) {
+          skipped += 1;
+          continue;
+        }
         const base = file.path.split("/").pop() || file.path;
         const title =
           parsed.frontmatter.title ||
@@ -1092,6 +1141,70 @@ export async function importRepositoryFiles(
       removed += 1;
       return false;
     });
+
+    // Reassign positions from import order within each parent group.
+    {
+      const importedDocs = data.documents.filter(
+        (d) =>
+          d.spaceId === space.id &&
+          d.locale === locale &&
+          d.sourcePath &&
+          (d.kind === "page" || d.kind === "category"),
+      );
+      const minLinkByFolder = new Map<string, number>();
+      for (const [path, entry] of orderByPath) {
+        if (entry.linkIndex == null) continue;
+        let dir = path.includes("/")
+          ? path.slice(0, path.lastIndexOf("/"))
+          : "";
+        while (dir && dir !== rootPrefix) {
+          const prev = minLinkByFolder.get(dir);
+          if (prev == null || entry.linkIndex < prev) {
+            minLinkByFolder.set(dir, entry.linkIndex);
+          }
+          dir = dir.includes("/") ? dir.slice(0, dir.lastIndexOf("/")) : "";
+        }
+      }
+      const groups = new Map<string | null, typeof importedDocs>();
+      for (const doc of importedDocs) {
+        const key = doc.parentId;
+        const list = groups.get(key) ?? [];
+        list.push(doc);
+        groups.set(key, list);
+      }
+      for (const siblings of groups.values()) {
+        siblings.sort((a, b) => {
+          const entryA: ImportOrderEntry =
+            a.kind === "category" && a.sourcePath
+              ? {
+                  ...folderSortKey(a.sourcePath),
+                  linkIndex: minLinkByFolder.get(a.sourcePath) ?? null,
+                }
+              : (orderByPath.get(a.sourcePath!) ?? {
+                  path: a.sourcePath || a.title,
+                  linkIndex: null,
+                  frontmatterOrder: null,
+                  numericPrefix: null,
+                });
+          const entryB: ImportOrderEntry =
+            b.kind === "category" && b.sourcePath
+              ? {
+                  ...folderSortKey(b.sourcePath),
+                  linkIndex: minLinkByFolder.get(b.sourcePath) ?? null,
+                }
+              : (orderByPath.get(b.sourcePath!) ?? {
+                  path: b.sourcePath || b.title,
+                  linkIndex: null,
+                  frontmatterOrder: null,
+                  numericPrefix: null,
+                });
+          return compareImportEntries(entryA, entryB);
+        });
+        siblings.forEach((doc, index) => {
+          doc.position = index;
+        });
+      }
+    }
 
     if (imported + updated === 0 && !input.spaceId) {
       data.documents.push({

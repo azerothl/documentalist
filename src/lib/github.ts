@@ -1,6 +1,7 @@
 import { unzipSync } from "fflate";
 import { Agent, fetch as undiciFetch } from "undici";
 import { lookup } from "node:dns/promises";
+import { naturalCompare } from "./import-order";
 import { publicAddress, validateOutboundUrl } from "./outbound";
 
 export type GithubFile = {
@@ -173,7 +174,7 @@ export async function listMarkdownFiles(options: {
       if (!root) return true;
       return p === root || p.startsWith(`${root}/`);
     })
-    .sort();
+    .sort(naturalCompare);
 
   return { owner, repo, branch, files, truncated: false };
 }
@@ -265,7 +266,7 @@ function extractMarkdownFromZip(
     matchedPaths.push(inner);
     byPath.set(inner, data);
   }
-  matchedPaths.sort();
+  matchedPaths.sort(naturalCompare);
   const truncated = matchedPaths.length > maxFiles;
   const selected = matchedPaths.slice(0, maxFiles);
   const files: GithubFile[] = selected.map((path) => ({
