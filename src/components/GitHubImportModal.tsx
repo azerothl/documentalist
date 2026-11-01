@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { InfoTip } from "@/components/InfoTip";
 import type { MarkdownFormat, Space } from "@/lib/types";
@@ -79,13 +79,22 @@ export function GitHubImportModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!open) return;
-    setIntoCurrent(Boolean(preferCurrentSpace && targetSpaceId));
-    setAutoSync(true);
-    setSyncIntervalMinutes(60);
-    setError("");
-  }, [open, preferCurrentSpace, targetSpaceId]);
+  // Each opening resets the per-import options; the repository fields are
+  // kept. Adjusted during render rather than in an effect (react.dev:
+  // "Adjusting some state when a prop changes").
+  const openKey = open
+    ? `${preferCurrentSpace}|${targetSpaceId ?? ""}`
+    : "closed";
+  const [lastOpenKey, setLastOpenKey] = useState(openKey);
+  if (openKey !== lastOpenKey) {
+    setLastOpenKey(openKey);
+    if (open) {
+      setIntoCurrent(Boolean(preferCurrentSpace && targetSpaceId));
+      setAutoSync(true);
+      setSyncIntervalMinutes(60);
+      setError("");
+    }
+  }
 
   if (!open) return null;
 

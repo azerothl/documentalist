@@ -309,6 +309,59 @@ export function WorkspaceApp({
     return m;
   }, [payload.variables]);
 
+  const persistContent = useCallback(
+    (documentId: string, content: TipTapDoc) => {
+      if (!pendingSaves.current.has(documentId))
+        pendingSaves.current.set(documentId, content);
+      const save = async () => {
+        setSaveState("saving");
+        try {
+          const res = await fetch(`/api/documents/${documentId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content,
+              expectedUpdatedAt: documentVersions.current.get(documentId),
+            }),
+          });
+          if (!res.ok) throw new Error("save failed");
+          const data = await res.json();
+          documentVersions.current.set(documentId, data.document.updatedAt);
+          setPayload((prev) => ({
+            ...prev,
+            documents: prev.documents.map((d) => {
+              if (d.id !== documentId) return d;
+              // Keep local editor content; only refresh server metadata.
+              return {
+                ...data.document,
+                content: d.content,
+                title: d.title,
+              };
+            }),
+          }));
+          if (pendingSaves.current.get(documentId) === content)
+            pendingSaves.current.delete(documentId);
+          setSaveState(pendingSaves.current.size ? "saving" : "saved");
+          return true;
+        } catch {
+          setSaveState("error");
+          return false;
+        }
+      };
+      saveChain.current = saveChain.current.then(save, save);
+      return saveChain.current;
+    },
+    [],
+  );
+
+  const flushPending = useCallback(async () => {
+    for (const timer of saveTimers.current.values()) window.clearTimeout(timer);
+    for (const [id, content] of pendingSaves.current)
+      if (!(await persistContent(id, content)))
+        throw new Error("La sauvegarde a échoué. Réessayez avant de publier.");
+    await saveChain.current;
+  }, [persistContent]);
+
   async function reloadSpace(spaceId: string) {
     await flushPending();
     const res = await fetch(`/api/spaces/${spaceId}`);
@@ -512,51 +565,6 @@ export function WorkspaceApp({
     };
   }, [query, payload.space.id, locale]);
 
-  const persistContent = useCallback(
-    (documentId: string, content: TipTapDoc) => {
-      if (!pendingSaves.current.has(documentId))
-        pendingSaves.current.set(documentId, content);
-      const save = async () => {
-        setSaveState("saving");
-        try {
-          const res = await fetch(`/api/documents/${documentId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              content,
-              expectedUpdatedAt: documentVersions.current.get(documentId),
-            }),
-          });
-          if (!res.ok) throw new Error("save failed");
-          const data = await res.json();
-          documentVersions.current.set(documentId, data.document.updatedAt);
-          setPayload((prev) => ({
-            ...prev,
-            documents: prev.documents.map((d) => {
-              if (d.id !== documentId) return d;
-              // Keep local editor content; only refresh server metadata.
-              return {
-                ...data.document,
-                content: d.content,
-                title: d.title,
-              };
-            }),
-          }));
-          if (pendingSaves.current.get(documentId) === content)
-            pendingSaves.current.delete(documentId);
-          setSaveState(pendingSaves.current.size ? "saving" : "saved");
-          return true;
-        } catch {
-          setSaveState("error");
-          return false;
-        }
-      };
-      saveChain.current = saveChain.current.then(save, save);
-      return saveChain.current;
-    },
-    [],
-  );
-
   const onEditorChange = useCallback(
     (content: TipTapDoc) => {
       if (!active || preview || readingMode) return;
@@ -581,13 +589,6 @@ export function WorkspaceApp({
     [active, persistContent, preview, readingMode],
   );
 
-  const flushPending = useCallback(async () => {
-    for (const timer of saveTimers.current.values()) window.clearTimeout(timer);
-    for (const [id, content] of pendingSaves.current)
-      if (!(await persistContent(id, content)))
-        throw new Error("La sauvegarde a échoué. Réessayez avant de publier.");
-    await saveChain.current;
-  }, [persistContent]);
   useEffect(() => {
     const beforeUnload = (e: BeforeUnloadEvent) => {
       if (pendingSaves.current.size) {

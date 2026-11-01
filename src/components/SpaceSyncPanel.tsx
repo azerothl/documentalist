@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { InfoTip } from "@/components/InfoTip";
 import type { SpaceImportSource } from "@/lib/types";
 
@@ -43,16 +43,10 @@ export function SpaceSyncPanel({
     importSource?.syncIntervalMinutes ?? 60,
   );
 
-  useEffect(() => {
-    setProvider(importSource?.provider ?? "github");
-    setRepository(importSource?.repository ?? "");
-    setBranch(importSource?.branch ?? "main");
-    setPath(importSource?.path ?? "docs");
-    setLearnPath(importSource?.learnPath ?? "");
-    setBlogPath(importSource?.blogPath ?? "");
-    setAutoSync(importSource?.autoSync ?? true);
-    setSyncIntervalMinutes(importSource?.syncIntervalMinutes ?? 60);
-  }, [
+  // Refill the form when the space or its linked source changes. Adjusted
+  // during render rather than in an effect (react.dev: "Adjusting some
+  // state when a prop changes").
+  const sourceKey = JSON.stringify([
     spaceId,
     importSource?.provider,
     importSource?.repository,
@@ -63,6 +57,18 @@ export function SpaceSyncPanel({
     importSource?.autoSync,
     importSource?.syncIntervalMinutes,
   ]);
+  const [syncedKey, setSyncedKey] = useState(sourceKey);
+  if (sourceKey !== syncedKey) {
+    setSyncedKey(sourceKey);
+    setProvider(importSource?.provider ?? "github");
+    setRepository(importSource?.repository ?? "");
+    setBranch(importSource?.branch ?? "main");
+    setPath(importSource?.path ?? "docs");
+    setLearnPath(importSource?.learnPath ?? "");
+    setBlogPath(importSource?.blogPath ?? "");
+    setAutoSync(importSource?.autoSync ?? true);
+    setSyncIntervalMinutes(importSource?.syncIntervalMinutes ?? 60);
+  }
 
   async function saveSource(next: SpaceImportSource, thenSync = false) {
     setBusy(true);
