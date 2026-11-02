@@ -602,10 +602,10 @@ test(
           assert.ok(tasks.every((task) => task.labels === 1));
           await page
             .getByRole("navigation", {
-              name: "Pages précédente et suivante",
+              name: "Previous and next pages",
               exact: true,
             })
-            .getByRole("link", { name: /^Page précédente : / })
+            .getByRole("link", { name: /^Previous page: / })
             .waitFor();
           assert.equal(
             await page.locator("article").getAttribute("lang"),
