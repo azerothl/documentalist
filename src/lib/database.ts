@@ -50,7 +50,7 @@ export function database() {
   if (globals.documentalistDb) return globals.documentalistDb;
   mkdirSync(dataDirectory, { recursive: true });
   const db = new Database(path.join(dataDirectory, "documentalist.sqlite"));
-  if (Number(db.pragma("user_version", { simple: true })) > 3) {
+  if (Number(db.pragma("user_version", { simple: true })) > 4) {
     db.close();
     throw new Error(
       "Version de base de données plus récente que l’application.",
@@ -81,11 +81,12 @@ export function database() {
     );
   db.exec(`
     CREATE TABLE IF NOT EXISTS user_space_access (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, space_id TEXT NOT NULL, PRIMARY KEY(user_id,space_id));
+    CREATE TABLE IF NOT EXISTS mcp_connections (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, key_hash TEXT UNIQUE NOT NULL, space_ids TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
     CREATE INDEX IF NOT EXISTS user_space_access_space ON user_space_access(space_id);
     CREATE INDEX IF NOT EXISTS account_tokens_user ON account_tokens(user_id);
     CREATE INDEX IF NOT EXISTS portal_magic_space_email ON portal_magic_tokens(space_id,email_hash);
     CREATE INDEX IF NOT EXISTS portal_sessions_space_email ON portal_access_sessions(space_id,email_hash);
-    PRAGMA user_version = 3;
+    PRAGMA user_version = 4;
   `);
   globals.documentalistDb = db;
   return db;

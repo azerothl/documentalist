@@ -143,9 +143,38 @@ npm run data:backup
 
 Conserver les sauvegardes **et la clé** séparément avec des droits d’accès adaptés. Pour une restauration complète, arrêter le serveur, sauvegarder les fichiers actuels, remplacer `documentalist.sqlite` par la sauvegarde, retirer ses anciens fichiers `-wal` et `-shm`, puis redémarrer avec la même clé. La restauration d’un état depuis l’interface conserve les comptes et le journal.
 
-Les secrets ne sont jamais renvoyés en clair au navigateur. Le masque `••••••••` signifie « conserver la valeur » ; remplacer le champ pour changer le secret, ou le vider pour le supprimer. Le CSS libre a été retiré ; la couleur d’accent reste configurable.
+Les secrets enregistrés ne sont pas renvoyés en clair au navigateur. Le masque `••••••••` signifie « conserver la valeur » ; remplacer le champ pour changer le secret, ou le vider pour le supprimer. Une nouvelle clé MCP est affichée une seule fois à sa création, puis seule son empreinte est conservée. Le CSS libre a été retiré ; la couleur d’accent reste configurable.
 
 Les requêtes sortantes vérifient les adresses DNS au moment de la connexion, refusent les réseaux privés par défaut, les protocoles dangereux et les redirections ; elles limitent aussi le temps et la taille des réponses. Les exceptions réseau sont configurées uniquement par l’opérateur dans `DOCUMENTALIST_PRIVATE_HOSTS`.
+
+## Accès documentaire des agents avec MCP
+
+Le serveur MCP est disponible à l’adresse `https://votre-domaine/mcp`, sur la même application et le même serveur. Il utilise Streamable HTTP en mode sans session et répond en JSON. Aucun service ou modèle d’IA supplémentaire n’est nécessaire. Les clients doivent prendre en charge ce transport ; le transport SSE historique n’est pas proposé.
+
+Sans authentification, les agents peuvent lire uniquement les espaces publiés en mode public. Pour autoriser une documentation privée, ouvrez **Équipe et activité → Accès des agents (MCP)** en tant qu’administrateur. Choisissez un compte actif, les espaces autorisés et la durée de validité de la clé. Copiez la configuration affichée une seule fois dans votre client MCP :
+
+```json
+{
+  "mcpServers": {
+    "documentalist": {
+      "url": "https://votre-domaine/mcp",
+      "headers": {
+        "Authorization": "Bearer VOTRE_CLE_MCP"
+      }
+    }
+  }
+}
+```
+
+Pour les documentations publiques, omettez `headers`. La forme exacte du fichier de configuration dépend du client. Cette version propose des clés Bearer configurées manuellement, et non un parcours OAuth interactif : les clients imposant OAuth ne peuvent pas se connecter aux espaces privés avec cette méthode.
+
+Les outils disponibles sont `list_spaces`, `list_pages`, `search_docs` et `read_page`. Les réponses donnent les identifiants, la langue, la version et les URL permettant de citer les pages. La recherche et le sommaire acceptent des filtres par espace, langue et version ; le sommaire propose aussi un filtre par onglet. Les listes utilisent `offset`, `limit` et `nextOffset`. La lecture renvoie le Markdown publié par tranches de 50 000 caractères, avec `nextOffset` si nécessaire.
+
+Les agents ne voient ni les brouillons, ni les pages masquées ou situées sous un parent masqué, ni les réglages, commentaires ou secrets de l’application. Une clé donne accès aux espaces explicitement cochés, y compris privés, dans la limite des droits actuels du compte associé. Un espace ajouté ultérieurement n’est pas autorisé automatiquement. Chaque version documentaire constitue un espace distinct. La clé ne remplace pas un code ou lien magique du portail : elle représente une autorisation d’accès documentaire distincte, accordée par l’administrateur.
+
+Les clés expirent après 1 à 365 jours et sont stockées uniquement sous forme d’empreinte SHA-256. La révocation, la désactivation du compte et les réductions de sa portée sont appliquées à la requête suivante. La gestion des connexions affiche la dernière utilisation ; les appels d’outils authentifiés sont inscrits dans le journal d’activité avec l’identifiant de connexion, sans enregistrer la clé ni la recherche. Les requêtes sont limitées à 120 par minute et par connexion, et à 60 par minute pour l’accès public partagé.
+
+Après mise à jour de l’application, la migration SQLite crée automatiquement les tables nécessaires. Le reverse proxy doit transmettre `/mcp` et l’en-tête `Authorization`, comme les autres routes. Configurez `DOCUMENTALIST_URL` avec l’URL HTTPS publique pour obtenir des citations correctes. Aucun port supplémentaire n’est requis.
 
 ## Vérifications
 
