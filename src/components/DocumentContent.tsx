@@ -1,14 +1,22 @@
 import type { TipTapDoc, TipTapNode } from "@/lib/types";
 import { useId, type ReactNode } from "react";
 import { extractText } from "@/lib/tiptap-text";
+import { getPortalUi } from "@/lib/portal-i18n";
 
 const safeUrl = (value: unknown, image = false) =>
   typeof value === "string" &&
   (image ? /^https?:\/\// : /^(https?:\/\/|mailto:|#|\/(?!\/))/).test(value)
     ? value
     : undefined;
-export function DocumentContent({ content }: { content: TipTapDoc }) {
+export function DocumentContent({
+  content,
+  locale = "fr",
+}: {
+  content: TipTapDoc;
+  locale?: string;
+}) {
   const id = useId();
+  const { language, messages } = getPortalUi(locale);
   let heading = 0;
   let task = 0;
   function render(node: TipTapNode, key: number): ReactNode {
@@ -60,7 +68,7 @@ export function DocumentContent({ content }: { content: TipTapDoc }) {
         return <blockquote key={key}>{children}</blockquote>;
       case "codeBlock":
         return (
-          <pre key={key} tabIndex={0} aria-label="Bloc de code">
+          <pre key={key} tabIndex={0} aria-label={messages.content.codeBlock}>
             <code>{children}</code>
           </pre>
         );
@@ -86,7 +94,7 @@ export function DocumentContent({ content }: { content: TipTapDoc }) {
             className="overflow-x-auto"
             tabIndex={0}
             role="region"
-            aria-label="Tableau du document"
+            aria-label={messages.content.table}
           >
             <table>
               <tbody>{children}</tbody>
@@ -120,7 +128,7 @@ export function DocumentContent({ content }: { content: TipTapDoc }) {
                 hasLabel &&
                 extractText({ type: "doc", content: [first] }).trim()
                   ? undefined
-                  : "Tâche"
+                  : messages.content.task
               }
               className="mt-1 h-4 w-4 shrink-0"
             />
@@ -153,19 +161,19 @@ export function DocumentContent({ content }: { content: TipTapDoc }) {
             role="note"
             aria-label={
               variant === "warning"
-                ? "Attention"
+                ? messages.content.warning
                 : variant === "success"
-                  ? "Succès"
-                  : "Information"
+                  ? messages.content.success
+                  : messages.content.information
             }
             className={`doc-callout doc-callout--${variant}`}
           >
-            <p lang="fr" className="doc-callout-label">
+            <p lang={language} className="doc-callout-label">
               {variant === "warning"
-                ? "Attention"
+                ? messages.content.warning
                 : variant === "success"
-                  ? "Succès"
-                  : "Information"}
+                  ? messages.content.success
+                  : messages.content.information}
             </p>
             <div>{children}</div>
           </aside>

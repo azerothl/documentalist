@@ -80,8 +80,11 @@ export default async function PortalDocPage({ params, searchParams }: Props) {
   const { lang } = await searchParams;
   const space = await getSpace(spaceSlug);
   if (!space?.publishedSnapshot || !space.isPublic) notFound();
+  const locale = lang || space.defaultLocale || "en";
   if (!(await portalAllowed(space.id, space.accessPassword)))
-    return <PortalUnlock slug={space.slug} name={space.name} />;
+    return (
+      <PortalUnlock slug={space.slug} name={space.name} locale={locale} />
+    );
   const allVariables = await listVariables();
   const all = await listSpaces();
   const versionSpaces = all
@@ -92,7 +95,6 @@ export default async function PortalDocPage({ params, searchParams }: Props) {
         s.isPublic,
     )
     .map((s) => ({ id: s.id, slug: s.slug, versionLabel: s.versionLabel }));
-  const locale = lang || space.defaultLocale || "en";
   const { space: publicSpace, documents } = publicPortalData(
     space,
     allVariables,

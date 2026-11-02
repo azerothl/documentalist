@@ -21,7 +21,9 @@ import {
 } from "@/components/AccountNavigation";
 import { DocumentContent } from "@/components/DocumentContent";
 import { TocPanel } from "@/components/TocPanel";
+import { PortalLocaleSync } from "@/components/PortalLocaleSync";
 import { accentStyle } from "@/lib/appearance";
+import { getPortalUi } from "@/lib/portal-i18n";
 import { buildTree, findByPath, flattenTree, pathSlugs } from "@/lib/tree";
 import { documentTrail, readingContent, searchExcerpt } from "@/lib/reading";
 import {
@@ -74,10 +76,6 @@ function mapNode(node: TipTapNode, vars: Record<string, string>): TipTapNode {
   };
 }
 
-const SECTION_LABEL = Object.fromEntries(
-  DOC_SECTIONS.map((s) => [s.id, s.label]),
-) as Record<DocSection, string>;
-
 function excerpt(doc: DocumentRecord, length = 220) {
   if (doc.seoDescription) return doc.seoDescription;
   const text = extractText(doc.content).replace(/\s+/g, " ").trim();
@@ -99,6 +97,7 @@ export function PortalView({
 }: Props) {
   const router = useRouter();
   const { theme } = useAppearance();
+  const { language: uiLanguage, messages: t } = getPortalUi(locale);
   const [query, setQuery] = useState("");
   const [navigationOpen, setNavigationOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -232,7 +231,7 @@ export function PortalView({
     <div className="grid gap-2 px-5 pb-4">
       {internal ? (
         <select
-          aria-label="Espace de documentation"
+          aria-label={t.controls.space}
           value={space.id}
           onChange={(e) =>
             router.push(`/app?space=${encodeURIComponent(e.target.value)}`)
@@ -248,7 +247,7 @@ export function PortalView({
       ) : null}
       <div className="grid grid-cols-2 gap-2">
         <select
-          aria-label="Version de la documentation"
+          aria-label={t.controls.version}
           className="reader-select w-full"
           value={space.id}
           onChange={(e) => {
@@ -268,7 +267,7 @@ export function PortalView({
           ))}
         </select>
         <select
-          aria-label="Langue de la documentation"
+          aria-label={t.controls.language}
           className="reader-select w-full"
           value={locale}
           onChange={(e) => router.push(href(undefined, e.target.value))}
@@ -285,7 +284,7 @@ export function PortalView({
 
   const sidebar = isBlog ? (
     <>
-      <p className="sidebar-heading">Blog</p>
+      <p className="sidebar-heading">{t.sections.blog}</p>
       <ul>
         <li className="sidebar-row">
           <Link
@@ -295,7 +294,7 @@ export function PortalView({
             aria-current={showBlogIndex ? "page" : undefined}
             onClick={() => setNavigationOpen(false)}
           >
-            Toutes les notes de version
+            {t.sidebar.allReleaseNotes}
           </Link>
         </li>
         {pages.map((post) => (
@@ -311,7 +310,7 @@ export function PortalView({
                 {post.title}
                 {post.date ? (
                   <span className="sidebar-date">
-                    {formatPostDate(post.date)}
+                    {formatPostDate(post.date, locale)}
                   </span>
                 ) : null}
               </span>
@@ -322,7 +321,7 @@ export function PortalView({
     </>
   ) : (
     <>
-      <p className="sidebar-heading">{SECTION_LABEL[activeSection]}</p>
+      <p className="sidebar-heading">{t.sections[activeSection]}</p>
       {tree.length ? (
         <SidebarTree
           nodes={tree}
@@ -330,17 +329,18 @@ export function PortalView({
           trail={current ? documentTrail(sectionDocs, current.id) : []}
           href={(doc) => href(doc)}
           onNavigate={() => setNavigationOpen(false)}
+          locale={locale}
         />
       ) : (
         <p className="px-5 text-sm text-[var(--ink-muted)]">
-          Aucune page dans cet onglet pour la langue « {locale} ».
+          {t.sidebar.noPagesInTab(locale)}
         </p>
       )}
     </>
   );
 
   const sectionTabs = (className: string) => (
-    <nav aria-label="Sections de la documentation" className={className}>
+    <nav aria-label={t.controls.sections} className={className}>
       {tabs.map((tab) => (
         <Link
           key={tab.id}
@@ -349,7 +349,7 @@ export function PortalView({
           aria-current={tab.id === activeSection ? "page" : undefined}
           onClick={() => setNavigationOpen(false)}
         >
-          {tab.label}
+          {t.sections[tab.id]}
         </Link>
       ))}
     </nav>
@@ -357,9 +357,14 @@ export function PortalView({
 
   return (
     <div
+      lang={uiLanguage}
       className="reader-shell flex min-h-dvh flex-col bg-[var(--bg)] text-[var(--ink)]"
       style={accentStyle(space.accentColor, theme)}
     >
+      <PortalLocaleSync
+        language={uiLanguage}
+        skipLinkLabel={t.skipToContent}
+      />
       <header className="site-nav reader-header">
         <div className="site-nav-inner">
           <button
@@ -367,7 +372,7 @@ export function PortalView({
             className="site-icon-button lg:hidden"
             aria-haspopup="dialog"
             aria-expanded={navigationOpen}
-            aria-label="Documents"
+            aria-label={t.documents}
             onClick={() => setNavigationOpen(true)}
           >
             <Menu size={22} aria-hidden="true" />
@@ -396,35 +401,37 @@ export function PortalView({
                 if (e.key === "Escape") setQuery("");
               }}
               type="search"
-              aria-label="Rechercher dans la documentation"
-              placeholder="Rechercher"
+              aria-label={t.search.label}
+              placeholder={t.search.placeholder}
               autoComplete="off"
             />
             <kbd aria-hidden="true">Ctrl K</kbd>
           </div>
           {sectionTabs("site-tabs ml-auto hidden md:flex")}
           <div className="ml-auto flex items-center gap-1 md:ml-2">
-            {account ? <AccountNavigation user={account} /> : null}
+            {account ? (
+              <AccountNavigation user={account} locale={locale} />
+            ) : null}
             {!internal ? (
               <>
-                <AppearanceSettings variant="icon" />
+                <AppearanceSettings variant="icon" locale={locale} />
                 <Link
                   href="/app"
                   className="site-icon-button"
-                  aria-label="Espace de rédaction"
-                  title="Espace de rédaction"
+                  aria-label={t.writingSpace}
+                  title={t.writingSpace}
                 >
                   <PenLine size={20} aria-hidden="true" />
                 </Link>
               </>
             ) : (
-              <span className="chip">Lecture seule</span>
+              <span className="chip">{t.readOnly}</span>
             )}
           </div>
         </div>
         {query.trim() ? (
           <section
-            aria-label="Résultats de recherche"
+            aria-label={t.search.results}
             className="site-search-results"
           >
             <p
@@ -432,8 +439,8 @@ export function PortalView({
               className="px-3 pb-2 text-sm text-[var(--ink-muted)]"
             >
               {results.length
-                ? `${results.length} résultat${results.length > 1 ? "s" : ""} pour « ${query} ».`
-                : `Aucun résultat pour « ${query} ».`}
+                ? t.search.resultCount(results.length, query)
+                : t.search.noResults(query)}
             </p>
             {results.length ? (
               <ul className="flex flex-col gap-1">
@@ -450,7 +457,7 @@ export function PortalView({
                       <span className="search-hit-title">
                         {doc.title}
                         <span className="section-pill">
-                          {SECTION_LABEL[docSection(doc)]}
+                          {t.sections[docSection(doc)]}
                         </span>
                       </span>
                       <span className="block text-sm text-[var(--ink-muted)]">
@@ -467,7 +474,7 @@ export function PortalView({
               </ul>
             ) : (
               <p className="px-3 text-sm text-[var(--ink-muted)]">
-                Essayez un autre mot ou changez de langue.
+                {t.search.tryAnother}
               </p>
             )}
           </section>
@@ -478,7 +485,7 @@ export function PortalView({
       <div className="site-body reader-layout">
         <nav
           id="portal-navigation"
-          aria-label="Documents de l’espace"
+          aria-label={t.sidebar.nav}
           className="site-sidebar"
         >
           {controls}
@@ -492,14 +499,15 @@ export function PortalView({
               posts={pages}
               href={href}
               varMap={varMap}
+              locale={locale}
             />
           ) : current && content ? (
             <article lang={locale} className="site-article reading-document">
-              <nav aria-label="Fil d’Ariane">
+              <nav aria-label={t.breadcrumb}>
                 <ol className="breadcrumbs">
                   <li>
                     <Link href={tabHref(activeSection)}>
-                      {SECTION_LABEL[activeSection]}
+                      {t.sections[activeSection]}
                     </Link>
                   </li>
                   {documentTrail(sectionDocs, current.id)
@@ -519,7 +527,7 @@ export function PortalView({
               {isBlog && current.date ? (
                 <p className="page-meta">
                   <time dateTime={current.date}>
-                    {formatPostDate(current.date)}
+                    {formatPostDate(current.date, locale)}
                   </time>
                 </p>
               ) : null}
@@ -530,22 +538,22 @@ export function PortalView({
               ) : null}
               {current.hidden && internal ? (
                 <p className="mt-4 text-sm text-[var(--ink-muted)]">
-                  Page masquée du portail public.
+                  {t.hiddenPage}
                 </p>
               ) : null}
               {extractHeadings(content).length ? (
                 <details className="page-contents mt-6 xl:hidden">
                   <summary className="cursor-pointer py-2 font-semibold">
-                    Sur cette page
+                    {t.onThisPage}
                   </summary>
-                  <TocPanel content={content} />
+                  <TocPanel content={content} locale={locale} />
                 </details>
               ) : null}
               {contentEmpty && children.length ? null : (
-                <DocumentContent content={content} />
+                <DocumentContent content={content} locale={locale} />
               )}
               {children.length ? (
-                <section aria-label="Pages de cette rubrique" className="mt-10">
+                <section aria-label={t.children} className="mt-10">
                   <div className="card-grid">
                     {children.map((child) => (
                       <Link key={child.id} href={href(child)} className="card">
@@ -562,20 +570,20 @@ export function PortalView({
               ) : null}
               {previous || next ? (
                 <nav
-                  aria-label="Pages précédente et suivante"
+                  aria-label={t.pager.nav}
                   className="pager"
                 >
                   {previous ? (
                     <Link
                       href={href(previous)}
-                      aria-label={`Page précédente : ${previous.title}`}
+                      aria-label={t.pager.previousPage(previous.title)}
                       className="pager-card page-step"
                       data-direction="previous"
                     >
                       <ArrowLeft size={22} aria-hidden="true" />
                       <span>
                         <span className="pager-label">
-                          {isBlog ? "Plus récent" : "Précédent"}
+                          {isBlog ? t.pager.newer : t.pager.previous}
                         </span>
                         <span className="pager-title">{previous.title}</span>
                       </span>
@@ -584,13 +592,13 @@ export function PortalView({
                   {next ? (
                     <Link
                       href={href(next)}
-                      aria-label={`Page suivante : ${next.title}`}
+                      aria-label={t.pager.nextPage(next.title)}
                       className="pager-card page-step"
                       data-direction="next"
                     >
                       <span>
                         <span className="pager-label">
-                          {isBlog ? "Plus ancien" : "Suivant"}
+                          {isBlog ? t.pager.older : t.pager.next}
                         </span>
                         <span className="pager-title">{next.title}</span>
                       </span>
@@ -602,17 +610,16 @@ export function PortalView({
             </article>
           ) : (
             <div className="site-article">
-              <h1 className="page-title">{SECTION_LABEL[activeSection]}</h1>
+              <h1 className="page-title">{t.sections[activeSection]}</h1>
               <p className="page-lead">
-                Aucune page dans la langue « {locale} ». Changez de langue ou
-                d’onglet pour consulter les documents disponibles.
+                {t.noPages(locale)}
               </p>
             </div>
           )}
         </main>
         {content && !showBlogIndex ? (
-          <aside className="site-toc" aria-label="Sommaire de la page">
-            <PageToc content={content} tags={current?.tags} />
+          <aside className="site-toc" aria-label={t.tableOfContents}>
+            <PageToc content={content} tags={current?.tags} locale={locale} />
           </aside>
         ) : null}
       </div>
@@ -625,15 +632,15 @@ export function PortalView({
             </span>
             <span className="site-brand-name">{space.name}</span>
           </span>
-          <nav aria-label="Pied de page">
+          <nav aria-label={t.footer.nav}>
             {tabs.map((tab) => (
               <Link key={tab.id} href={tabHref(tab.id)}>
-                {tab.label}
+                {t.sections[tab.id]}
               </Link>
             ))}
           </nav>
           <span className="inline-flex items-center gap-2">
-            Documentation publiée avec
+            {t.footer.publishedWith}
             <BrandLogo height={22} />
           </span>
         </div>
@@ -642,10 +649,12 @@ export function PortalView({
       <Dialog
         open={navigationOpen}
         onClose={() => setNavigationOpen(false)}
-        title="Documents"
+        title={t.mobileNavigation}
+        closeLabel={t.close}
+        lang={uiLanguage}
         className="navigation-dialog"
       >
-        <nav id="portal-mobile-navigation" aria-label="Documents de l’espace">
+        <nav id="portal-mobile-navigation" aria-label={t.sidebar.nav}>
           {tabs.length > 1 ? (
             <div className="mb-4 px-1">
               {sectionTabs("site-tabs flex-wrap")}
@@ -665,6 +674,7 @@ function SidebarTree({
   trail,
   href,
   onNavigate,
+  locale,
   depth = 0,
 }: {
   nodes: DocTreeNode[];
@@ -672,8 +682,10 @@ function SidebarTree({
   trail: DocumentRecord[];
   href: (doc: DocumentRecord) => string;
   onNavigate: () => void;
+  locale: string;
   depth?: number;
 }) {
+  const { messages } = getPortalUi(locale);
   // Top-level groups start open; deeper ones open along the active path.
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const onTrail = new Set(trail.map((d) => d.id));
@@ -697,7 +709,9 @@ function SidebarTree({
                   onClick={onNavigate}
                 >
                   {node.title}
-                  <span className="sr-only"> (nouvel onglet)</span>
+                  <span className="sr-only">
+                    {messages.sidebar.externalLink}
+                  </span>
                 </a>
               ) : (
                 <Link
@@ -716,7 +730,11 @@ function SidebarTree({
                   type="button"
                   className="sidebar-toggle"
                   aria-expanded={expanded}
-                  aria-label={`${expanded ? "Replier" : "Déplier"} ${node.title}`}
+                  aria-label={
+                    expanded
+                      ? messages.sidebar.collapse(node.title)
+                      : messages.sidebar.expand(node.title)
+                  }
                   onClick={() =>
                     setOpen((prev) => ({ ...prev, [node.id]: !expanded }))
                   }
@@ -732,6 +750,7 @@ function SidebarTree({
                 trail={trail}
                 href={href}
                 onNavigate={onNavigate}
+                locale={locale}
                 depth={depth + 1}
               />
             ) : null}
@@ -746,10 +765,13 @@ function SidebarTree({
 function PageToc({
   content,
   tags = [],
+  locale,
 }: {
   content: TipTapDoc;
   tags?: string[];
+  locale: string;
 }) {
+  const { language, messages } = getPortalUi(locale);
   const headings = extractHeadings(content)
     .map((h, index) => ({ ...h, anchor: `section-${index}` }))
     .filter((h) => h.level <= 3);
@@ -777,10 +799,10 @@ function PageToc({
   if (!headings.length && !tags.length) return null;
   const minLevel = Math.min(...headings.map((h) => h.level), 3);
   return (
-    <nav aria-label="Sur cette page" lang="fr">
+    <nav aria-label={messages.onThisPage} lang={language}>
       {headings.length ? (
         <>
-          <p className="toc-heading">Sur cette page</p>
+          <p className="toc-heading">{messages.onThisPage}</p>
           <ul>
             {headings.map((h) => (
               <li key={h.anchor}>
@@ -805,7 +827,7 @@ function PageToc({
       ) : null}
       {tags.length ? (
         <div className="mt-8">
-          <p className="toc-heading">Tags</p>
+          <p className="toc-heading">{messages.tags}</p>
           <div className="toc-tags">
             {tags.map((t) => (
               <span key={t} className="chip">
@@ -838,40 +860,46 @@ function BlogIndex({
   posts,
   href,
   varMap,
+  locale,
 }: {
   spaceName: string;
   intro?: DocumentRecord;
   posts: DocumentRecord[];
   href: (doc: DocumentRecord) => string;
   varMap: Record<string, string>;
+  locale: string;
 }) {
+  const { messages } = getPortalUi(locale);
   return (
     <div className="site-article">
-      <p className="eyebrow">Notes de version</p>
-      <h1 className="page-title mt-2">Blog</h1>
+      <p className="eyebrow">{messages.blog.releaseNotes}</p>
+      <h1 className="page-title mt-2">{messages.sections.blog}</h1>
       <p className="page-lead">
         {applyVariables(
           intro?.seoDescription ||
             introParagraph(intro) ||
-            `Les nouveautés et notes de version de ${spaceName}.`,
+            messages.blog.defaultDescription(spaceName),
           varMap,
         )}
       </p>
-      <ul className="blog-list" aria-label="Articles">
+      <ul className="blog-list" aria-label={messages.blog.articles}>
         {posts.map((post) => (
           <li key={post.id}>
             <Link href={href(post)} className="card">
               <h2 className="card-title">{post.title}</h2>
               {post.date ? (
                 <p className="card-meta">
-                  <time dateTime={post.date}>{formatPostDate(post.date)}</time>
+                  <time dateTime={post.date}>
+                    {formatPostDate(post.date, locale)}
+                  </time>
                 </p>
               ) : null}
               {excerpt(post) ? (
                 <p className="card-text">{excerpt(post)}</p>
               ) : null}
               <span className="card-more">
-                Lire la suite <ArrowRight size={16} aria-hidden="true" />
+                {messages.blog.readMore}{" "}
+                <ArrowRight size={16} aria-hidden="true" />
               </span>
             </Link>
           </li>

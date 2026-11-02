@@ -2,16 +2,33 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppearanceSettings } from "@/components/Appearance";
-export function PortalUnlock({ slug, name }: { slug: string; name: string }) {
+import { PortalLocaleSync } from "@/components/PortalLocaleSync";
+import { getPortalUi } from "@/lib/portal-i18n";
+export function PortalUnlock({
+  slug,
+  name,
+  locale = "fr",
+}: {
+  slug: string;
+  name: string;
+  locale?: string;
+}) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const { language, messages } = getPortalUi(locale);
+  const t = messages.unlock;
   return (
     <main
       id="main-content"
+      lang={language}
       tabIndex={-1}
       className="flex min-h-dvh flex-col justify-center gap-4 px-4"
     >
+      <PortalLocaleSync
+        language={language}
+        skipLinkLabel={messages.skipToContent}
+      />
       <form
         className="mx-auto flex w-full max-w-sm flex-col gap-4 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-6"
         onSubmit={async (e) => {
@@ -25,11 +42,19 @@ export function PortalUnlock({ slug, name }: { slug: string; name: string }) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ slug, password }),
             });
-            const result = await r.json();
-            if (!r.ok) throw new Error(result.error);
+            if (!r.ok) {
+              setError(
+                r.status === 429
+                  ? t.rateLimited
+                  : r.status === 403
+                    ? t.incorrect
+                    : t.unavailable,
+              );
+              return;
+            }
             router.refresh();
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Accès impossible.");
+          } catch {
+            setError(t.unavailable);
           } finally {
             setBusy(false);
           }
@@ -38,9 +63,9 @@ export function PortalUnlock({ slug, name }: { slug: string; name: string }) {
         <h1 className="font-[family-name:var(--font-display)] text-2xl">
           {name}
         </h1>
-        <p>Ce portail est protégé par un mot de passe.</p>
+        <p>{t.description}</p>
         <label>
-          Mot de passe
+          {t.password}
           <input
             required
             name="password"
@@ -58,11 +83,11 @@ export function PortalUnlock({ slug, name }: { slug: string; name: string }) {
           disabled={busy}
           className="rounded bg-[var(--accent)] p-2 text-[var(--on-accent)]"
         >
-          {busy ? "Vérification…" : "Ouvrir le portail"}
+          {busy ? t.checking : t.open}
         </button>
       </form>
       <div className="mx-auto w-full max-w-sm">
-        <AppearanceSettings />
+        <AppearanceSettings locale={locale} />
       </div>
     </main>
   );

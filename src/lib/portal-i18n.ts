@@ -1,0 +1,234 @@
+import type { DocSection } from "@/lib/types";
+
+const messages = {
+  fr: {
+    skipToContent: "Aller au contenu principal",
+    sections: {
+      learn: "Apprendre",
+      reference: "Référence",
+      blog: "Blog",
+    } satisfies Record<DocSection, string>,
+    account: {
+      navigation: "Compte",
+      admin: "Administrateur",
+      editor: "Rédacteur",
+      viewer: "Lecteur",
+      team: "Équipe et activité",
+    },
+    controls: {
+      space: "Espace de documentation",
+      version: "Version de la documentation",
+      language: "Langue de la documentation",
+      sections: "Sections de la documentation",
+    },
+    documents: "Documents",
+    search: {
+      label: "Rechercher dans la documentation",
+      placeholder: "Rechercher",
+      results: "Résultats de recherche",
+      resultCount: (count: number, query: string) =>
+        `${count} résultat${count > 1 ? "s" : ""} pour « ${query} ».`,
+      noResults: (query: string) => `Aucun résultat pour « ${query} ».`,
+      tryAnother: "Essayez un autre mot ou changez de langue.",
+    },
+    writingSpace: "Espace de rédaction",
+    readOnly: "Lecture seule",
+    sidebar: {
+      allReleaseNotes: "Toutes les notes de version",
+      noPagesInTab: (locale: string) =>
+        `Aucune page dans cet onglet pour la langue « ${locale} ».`,
+      nav: "Documents de l’espace",
+      externalLink: " (nouvel onglet)",
+      collapse: (title: string) => `Replier ${title}`,
+      expand: (title: string) => `Déplier ${title}`,
+    },
+    breadcrumb: "Fil d’Ariane",
+    hiddenPage: "Page masquée du portail public.",
+    onThisPage: "Sur cette page",
+    children: "Pages de cette rubrique",
+    pager: {
+      nav: "Pages précédente et suivante",
+      previous: "Précédent",
+      next: "Suivant",
+      newer: "Plus récent",
+      older: "Plus ancien",
+      previousPage: (title: string) => `Page précédente : ${title}`,
+      nextPage: (title: string) => `Page suivante : ${title}`,
+    },
+    tableOfContents: "Sommaire de la page",
+    footer: {
+      nav: "Pied de page",
+      publishedWith: "Documentation publiée avec",
+    },
+    mobileNavigation: "Documents",
+    noPages: (locale: string) =>
+      `Aucune page dans la langue « ${locale} ». Changez de langue ou d’onglet pour consulter les documents disponibles.`,
+    tags: "Tags",
+    noSectionTitles: "Aucun titre de section.",
+    blog: {
+      releaseNotes: "Notes de version",
+      articles: "Articles",
+      readMore: "Lire la suite",
+      defaultDescription: (spaceName: string) =>
+        `Les nouveautés et notes de version de ${spaceName}.`,
+    },
+    close: "Fermer",
+    appearance: {
+      title: "Apparence et lecture",
+      theme: "Thème",
+      system: "Suivre le système",
+      light: "Clair",
+      dark: "Sombre — Nuit",
+      contrast: "Contraste renforcé",
+      textSize: "Taille du texte",
+      standard: "Standard",
+      comfortable: "Confortable",
+      larger: "Plus grand",
+      readingWidth: "Largeur de lecture",
+      wide: "Large",
+      readingMode: "Mode lecture",
+      readingModeDescription:
+        "Masquer les outils de rédaction pour se concentrer sur le document.",
+      preferencesDescription:
+        "Ces préférences sont enregistrées dans ce navigateur et s’appliquent à tous vos espaces. Les animations suivent les préférences de votre appareil.",
+      preferencesApplied: (theme: string, size: number) =>
+        `Préférences appliquées : ${theme}, texte ${size} pixels.`,
+    },
+    content: {
+      codeBlock: "Bloc de code",
+      table: "Tableau du document",
+      task: "Tâche",
+      warning: "Attention",
+      success: "Succès",
+      information: "Information",
+    },
+    unlock: {
+      description: "Ce portail est protégé par un mot de passe.",
+      password: "Mot de passe",
+      incorrect: "Mot de passe incorrect.",
+      rateLimited: "Trop de tentatives. Réessayez dans dix minutes.",
+      unavailable: "Accès impossible.",
+      checking: "Vérification…",
+      open: "Ouvrir le portail",
+    },
+  },
+  en: {
+    skipToContent: "Skip to main content",
+    sections: {
+      learn: "Learn",
+      reference: "Reference",
+      blog: "Blog",
+    } satisfies Record<DocSection, string>,
+    account: {
+      navigation: "Account",
+      admin: "Administrator",
+      editor: "Editor",
+      viewer: "Reader",
+      team: "Team and activity",
+    },
+    controls: {
+      space: "Documentation space",
+      version: "Documentation version",
+      language: "Documentation language",
+      sections: "Documentation sections",
+    },
+    documents: "Documents",
+    search: {
+      label: "Search the documentation",
+      placeholder: "Search",
+      results: "Search results",
+      resultCount: (count: number, query: string) =>
+        `${count} result${count === 1 ? "" : "s"} for “${query}”.`,
+      noResults: (query: string) => `No results for “${query}”.`,
+      tryAnother: "Try another search or change the language.",
+    },
+    writingSpace: "Writing workspace",
+    readOnly: "Read only",
+    sidebar: {
+      allReleaseNotes: "All release notes",
+      noPagesInTab: (locale: string) =>
+        `There are no pages in this tab for “${locale}”.`,
+      nav: "Space documents",
+      externalLink: " (opens in a new tab)",
+      collapse: (title: string) => `Collapse ${title}`,
+      expand: (title: string) => `Expand ${title}`,
+    },
+    breadcrumb: "Breadcrumb",
+    hiddenPage: "This page is hidden from the public portal.",
+    onThisPage: "On this page",
+    children: "Pages in this section",
+    pager: {
+      nav: "Previous and next pages",
+      previous: "Previous",
+      next: "Next",
+      newer: "Newer",
+      older: "Older",
+      previousPage: (title: string) => `Previous page: ${title}`,
+      nextPage: (title: string) => `Next page: ${title}`,
+    },
+    tableOfContents: "Page contents",
+    footer: {
+      nav: "Footer navigation",
+      publishedWith: "Documentation published with",
+    },
+    mobileNavigation: "Documents",
+    noPages: (locale: string) =>
+      `There are no pages in “${locale}”. Change the language or section to view available documents.`,
+    tags: "Tags",
+    noSectionTitles: "No section headings.",
+    blog: {
+      releaseNotes: "Release notes",
+      articles: "Articles",
+      readMore: "Read more",
+      defaultDescription: (spaceName: string) =>
+        `Product news and release notes for ${spaceName}.`,
+    },
+    close: "Close",
+    appearance: {
+      title: "Appearance and reading",
+      theme: "Theme",
+      system: "Use system setting",
+      light: "Light",
+      dark: "Dark — Night",
+      contrast: "High contrast",
+      textSize: "Text size",
+      standard: "Standard",
+      comfortable: "Comfortable",
+      larger: "Larger",
+      readingWidth: "Reading width",
+      wide: "Wide",
+      readingMode: "Reading mode",
+      readingModeDescription:
+        "Hide editing tools and focus on the document.",
+      preferencesDescription:
+        "These preferences are saved in this browser and apply across your spaces. Animations follow your device preferences.",
+      preferencesApplied: (theme: string, size: number) =>
+        `Preferences applied: ${theme}, ${size}-pixel text.`,
+    },
+    content: {
+      codeBlock: "Code block",
+      table: "Document table",
+      task: "Task",
+      warning: "Warning",
+      success: "Success",
+      information: "Information",
+    },
+    unlock: {
+      description: "This portal is password protected.",
+      password: "Password",
+      incorrect: "Incorrect password.",
+      rateLimited: "Too many attempts. Try again in ten minutes.",
+      unavailable: "Unable to unlock the portal.",
+      checking: "Checking…",
+      open: "Open portal",
+    },
+  },
+} as const;
+
+export type PortalUiLanguage = keyof typeof messages;
+
+export function getPortalUi(locale: string) {
+  const baseLanguage = locale.toLowerCase().split(/[-_]/, 1)[0];
+  const language: PortalUiLanguage = baseLanguage === "en" ? "en" : "fr";
+  return { language, messages: messages[language] };
+}

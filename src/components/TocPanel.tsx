@@ -2,31 +2,34 @@
 
 import type { TipTapDoc } from "@/lib/types";
 import { extractHeadings } from "@/lib/tiptap-text";
+import { getPortalUi } from "@/lib/portal-i18n";
 
 type Props = {
   content: TipTapDoc;
   tags?: string[];
+  locale?: string;
 };
 
-export function TocPanel({ content, tags = [] }: Props) {
+export function TocPanel({ content, tags = [], locale = "fr" }: Props) {
   const headings = extractHeadings(content);
+  const { language, messages } = getPortalUi(locale);
 
   return (
     <nav
-      lang="fr"
-      aria-label="Sur cette page"
+      lang={language}
+      aria-label={messages.onThisPage}
       className="toc-panel flex h-full flex-col border-l border-[var(--line)] bg-[var(--surface)]"
     >
       <p className="border-b border-[var(--line)] px-3 py-3 text-sm font-medium">
-        Sommaire
+        {messages.onThisPage}
       </p>
       <div className="flex-1 overflow-auto p-3">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
-          Sur cette page
+          {messages.onThisPage}
         </p>
         {headings.length === 0 ? (
           <p className="text-[13px] text-[var(--ink-faint)]">
-            Aucun titre de section.
+            {messages.noSectionTitles}
           </p>
         ) : (
           <ul className="flex flex-col gap-1">
@@ -49,7 +52,7 @@ export function TocPanel({ content, tags = [] }: Props) {
         {tags.length > 0 ? (
           <div className="mt-6">
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
-              Tags
+              {messages.tags}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {tags.map((t) => (
