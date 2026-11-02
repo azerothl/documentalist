@@ -990,6 +990,12 @@ export async function listComments(documentId: string): Promise<Comment[]> {
   return (data.comments ?? []).filter((c) => c.documentId === documentId);
 }
 
+export async function getComment(id: string): Promise<Comment | undefined> {
+  const data = await readStore();
+  const comment = (data.comments ?? []).find((item) => item.id === id);
+  return comment ? structuredClone(comment) : undefined;
+}
+
 export async function addComment(input: {
   documentId: string;
   author: string;
@@ -1775,7 +1781,12 @@ export async function importOpenApiIntegration(
 
 export async function searchDocuments(
   query: string,
-  options?: { spaceId?: string; publishedOnly?: boolean; locale?: string },
+  options?: {
+    spaceId?: string;
+    publishedOnly?: boolean;
+    locale?: string;
+    allowedSpaceIds?: string[];
+  },
 ): Promise<{ document: DocumentRecord; space: Space; snippet: string }[]> {
   const data = await readStore();
   const q = query.trim().toLowerCase();
@@ -1787,6 +1798,8 @@ export async function searchDocuments(
 
   for (const space of data.spaces) {
     if (options?.spaceId && space.id !== options.spaceId) continue;
+    if (options?.allowedSpaceIds && !options.allowedSpaceIds.includes(space.id))
+      continue;
     const docs =
       options?.publishedOnly && space.publishedSnapshot
         ? space.publishedSnapshot.documents

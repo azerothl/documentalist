@@ -1,5 +1,6 @@
 import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
+import { canAccessSpace, currentUser } from "@/lib/auth";
 import { createSpaceVersion, getSpace, listSpaces } from "@/lib/store";
 
 type Params = { params: Promise<{ spaceId: string }> };
@@ -10,15 +11,23 @@ async function handleGET(_request: Request, { params }: Params) {
   if (!space) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  const user = (await currentUser())!;
   const spaces = await listSpaces();
   const versions = spaces.filter(
-    (s) => s.versionGroupId === space.versionGroupId,
+    (s) =>
+      s.versionGroupId === space.versionGroupId && canAccessSpace(user, s.id),
   );
   return NextResponse.json({ versions });
 }
 
 async function handlePOST(request: Request, { params }: Params) {
   const { spaceId } = await params;
+  const user = (await currentUser())!;
+  if (user.role !== "admin" && user.spaceScope === "selected")
+    return NextResponse.json(
+      { error: "La création de versions est réservée aux comptes ayant accès à tous les espaces." },
+      { status: 403 },
+    );
   const body = (await request.json()) as { label?: string };
   const space = await createSpaceVersion(spaceId, body.label ?? "v1.0");
   if (!space) {

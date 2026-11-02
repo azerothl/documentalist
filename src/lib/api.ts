@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { currentUser } from "./auth";
+import { canAccessSpace, currentUser, type User } from "./auth";
 import { audit, rateLimit } from "./database";
 import { clientData } from "./secrets";
 import { GitHubReadOnlyDocumentError } from "./document-access";
@@ -162,6 +162,7 @@ export function secureRoute<A extends unknown[]>(
           { error: "Vous n’avez pas les droits nécessaires." },
           { status: 403 },
         );
+      let parsedBody: unknown;
       if (
         !rateLimit(
           options.public ? `public:${path}` : `user:${user!.id}`,
@@ -213,12 +214,21 @@ export function secureRoute<A extends unknown[]>(
             if (depth > 80) throw new Error("Document trop imbriqué.");
           }
           const body = validateBody(path, request.method, JSON.parse(raw));
+          parsedBody = body;
           request = new Request(request.url, {
             method: request.method,
             headers: request.headers,
             body: JSON.stringify(body),
           });
         }
+      }
+      if (user) {
+        const scopeError = await authorizeSpaceScope(
+          request,
+          user,
+          parsedBody,
+        );
+        if (scopeError) return scopeError;
       }
       const response = await handler(request, ...args);
       if (mutation && user && response.ok)
@@ -254,4 +264,106 @@ export function secureRoute<A extends unknown[]>(
       );
     }
   };
+}
+
+async function authorizeSpaceScope(
+  request: Request,
+  user: User,
+  body: unknown,
+): Promise<Response | null> {
+  const { pathname, searchParams } = new URL(request.url);
+  const limited = user.role !== "admin" && user.spaceScope === "selected";
+  const data = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+
+  const { getDocument, getSpace } = await import("./store");
+  const spaceIsAllowed = async (idOrSlug: string) => {
+    const space = await getSpace(idOrSlug.trim());
+    return !space || canAccessSpace(user, space.id);
+  };
+  const notFound = () =>
+    NextResponse.json({ error: "not found" }, { status: 404 });
+
+  if (pathname === "/api/ai" && request.method === "POST") {
+    const spaceId = typeof data.spaceId === "string" ? data.spaceId : "";
+    const documentId =
+      typeof data.documentId === "string" ? data.documentId : "";
+    if (documentId) {
+      const document = await getDocument(documentId);
+      if (document && spaceId && document.spaceId !== spaceId) return notFound();
+      if (document && limited && !canAccessSpace(user, document.spaceId))
+        return notFound();
+    }
+    if (spaceId && limited && !(await spaceIsAllowed(spaceId)))
+      return notFound();
+  }
+
+  if (pathname === "/api/spaces" && request.method === "POST" && limited)
+    return NextResponse.json(
+      { error: "Un administrateur doit créer les espaces." },
+      { status: 403 },
+    );
+
+  if (pathname === "/api/variables" && request.method === "PUT" && limited)
+    return NextResponse.json(
+      { error: "La modification des variables communes est réservée aux comptes ayant accès à tous les espaces." },
+      { status: 403 },
+    );
+
+  if (pathname === "/api/github/import" && limited && !data.spaceId)
+    return NextResponse.json(
+      { error: "Un administrateur doit créer les espaces." },
+      { status: 403 },
+    );
+
+  let spaceRef: string | null = null;
+  if (pathname === "/api/spaces/sync") {
+    spaceRef = typeof data.spaceId === "string" ? data.spaceId : null;
+  } else if (pathname === "/api/documents" || pathname === "/api/documents/import" || pathname === "/api/documents/reorder") {
+    spaceRef =
+      request.method === "GET"
+        ? searchParams.get("spaceId")
+        : typeof data.spaceId === "string"
+          ? data.spaceId
+          : null;
+  } else if (pathname === "/api/search") {
+    spaceRef = searchParams.get("spaceId");
+  } else if (pathname === "/api/github/import") {
+    spaceRef = typeof data.spaceId === "string" ? data.spaceId : null;
+  } else if (pathname.startsWith("/api/spaces/")) {
+    const segment = pathname.slice("/api/spaces/".length).split("/")[0];
+    if (segment && segment !== "sync") spaceRef = decodeURIComponent(segment);
+  }
+
+  if (spaceRef && limited && !(await spaceIsAllowed(spaceRef)))
+    return notFound();
+
+  const documentMatch = pathname.match(/^\/api\/documents\/([^/]+)(?:\/|$)/);
+  if (
+    limited &&
+    documentMatch &&
+    !["import", "reorder"].includes(documentMatch[1])
+  ) {
+    const document = await getDocument(decodeURIComponent(documentMatch[1]));
+    if (document && !canAccessSpace(user, document.spaceId)) return notFound();
+  }
+
+  if (pathname === "/api/comments") {
+    let documentId =
+      request.method === "GET"
+        ? searchParams.get("documentId")
+        : typeof data.documentId === "string"
+          ? data.documentId
+          : null;
+    if (request.method === "PATCH" && typeof data.id === "string") {
+      const { getComment } = await import("./store");
+      documentId = (await getComment(data.id))?.documentId ?? null;
+    }
+    if (documentId) {
+      const document = await getDocument(documentId);
+      if (document && limited && !canAccessSpace(user, document.spaceId))
+        return notFound();
+    }
+  }
+
+  return null;
 }

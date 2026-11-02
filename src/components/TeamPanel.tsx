@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 type TeamData = {
+  spaces: { id: string; name: string }[];
   users: {
     id: string;
     email: string;
@@ -9,6 +10,8 @@ type TeamData = {
     role: string;
     disabled: number;
     password_set: number;
+    spaceScope: "all" | "selected";
+    spaceIds: string[];
   }[];
   activity: {
     id: number;
@@ -24,6 +27,10 @@ export function TeamPanel({ admin }: { admin: boolean }) {
   const [data, setData] = useState<TeamData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [inviteRole, setInviteRole] = useState("editor");
+  const [inviteScope, setInviteScope] = useState<"all" | "selected">("selected");
+  const [inviteSpaceIds, setInviteSpaceIds] = useState<string[]>([]);
+  const [inviteSpacesInitialized, setInviteSpacesInitialized] = useState(false);
   async function load() {
     const r = await fetch("/api/admin/team");
     const v = await r.json();
@@ -46,6 +53,12 @@ export function TeamPanel({ admin }: { admin: boolean }) {
       active = false;
     };
   }, [admin]);
+  useEffect(() => {
+    if (!inviteSpacesInitialized && data) {
+      setInviteSpaceIds(data.spaces.slice(0, 1).map((space) => space.id));
+      setInviteSpacesInitialized(true);
+    }
+  }, [data, inviteSpacesInitialized]);
   async function action(path: string, method: string, body: unknown) {
     setBusy(true);
     setError("");
@@ -96,6 +109,7 @@ export function TeamPanel({ admin }: { admin: boolean }) {
                 <thead>
                   <tr>
                     <th>Utilisateur</th>
+                    <th>Espaces accessibles</th>
                     <th>Rôle</th>
                     <th>Accès</th>
                     <th>Statut et lien</th>
@@ -108,6 +122,62 @@ export function TeamPanel({ admin }: { admin: boolean }) {
                         {u.name}
                         <br />
                         <span className="text-xs">{u.email}</span>
+                      </td>
+                      <td className="min-w-56 py-2">
+                        {u.role === "admin" ? (
+                          <span>Tous les espaces (administrateur)</span>
+                        ) : (
+                          <>
+                            <select
+                              aria-label={`Espaces accessibles à ${u.name}`}
+                              value={u.spaceScope}
+                              disabled={busy}
+                              onChange={(e) => {
+                                const scope = e.target.value as "all" | "selected";
+                                void action("/api/admin/team", "PATCH", {
+                                  id: u.id,
+                                  spaceScope: scope,
+                                  spaceIds:
+                                    scope === "selected"
+                                      ? u.spaceScope === "selected"
+                                        ? u.spaceIds
+                                        : data?.spaces.slice(0, 1).map((s) => s.id) ?? []
+                                      : [],
+                                });
+                              }}
+                            >
+                              <option value="all">Tous les espaces</option>
+                              <option value="selected">Espaces sélectionnés</option>
+                            </select>
+                            {u.spaceScope === "selected" && (
+                              <fieldset className="mt-2 grid gap-1">
+                                <legend className="text-xs text-[var(--ink-muted)]">
+                                  Cochez les espaces autorisés
+                                </legend>
+                                {data?.spaces.map((space) => (
+                                  <label key={space.id} className="flex items-center gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={u.spaceIds.includes(space.id)}
+                                      disabled={busy || (u.spaceIds.length === 1 && u.spaceIds.includes(space.id))}
+                                      onChange={(e) => {
+                                        const spaceIds = e.target.checked
+                                          ? [...u.spaceIds, space.id]
+                                          : u.spaceIds.filter((id) => id !== space.id);
+                                        void action("/api/admin/team", "PATCH", {
+                                          id: u.id,
+                                          spaceScope: "selected",
+                                          spaceIds,
+                                        });
+                                      }}
+                                    />
+                                    {space.name}
+                                  </label>
+                                ))}
+                              </fieldset>
+                            )}
+                          </>
+                        )}
                       </td>
                       <td>
                         <select
@@ -171,8 +241,17 @@ export function TeamPanel({ admin }: { admin: boolean }) {
                 void action(
                   "/api/admin/team",
                   "POST",
-                  Object.fromEntries(new FormData(form)),
-                ).then(() => form.reset());
+                  {
+                    ...Object.fromEntries(new FormData(form)),
+                    spaceScope: inviteScope,
+                    spaceIds: inviteScope === "selected" ? inviteSpaceIds : [],
+                  },
+                ).then(() => {
+                  form.reset();
+                  setInviteRole("editor");
+                  setInviteScope("selected");
+                  setInviteSpaceIds(data?.spaces.slice(0, 1).map((space) => space.id) ?? []);
+                });
               }}
             >
               <label>
@@ -185,14 +264,67 @@ export function TeamPanel({ admin }: { admin: boolean }) {
               </label>
               <label>
                 Rôle
-                <select name="role">
+                <select
+                  name="role"
+                  value={inviteRole}
+                  onChange={(e) => {
+                    setInviteRole(e.target.value);
+                    if (e.target.value === "admin") setInviteScope("all");
+                    else if (inviteScope === "all") setInviteScope("selected");
+                  }}
+                >
                   <option value="editor">Rédacteur</option>
                   <option value="viewer">Lecteur</option>
                   <option value="admin">Administrateur</option>
                 </select>
               </label>
+              <label>
+                Espaces accessibles
+                <select
+                  name="spaceScope"
+                  value={inviteScope}
+                  disabled={inviteRole === "admin"}
+                  onChange={(e) =>
+                    setInviteScope(e.target.value as "all" | "selected")
+                  }
+                >
+                  <option value="selected">Espaces sélectionnés</option>
+                  <option value="all">Tous les espaces</option>
+                </select>
+              </label>
+              {inviteRole !== "admin" && inviteScope === "selected" && (
+                <fieldset className="grid gap-1 sm:col-span-2">
+                  <legend>Choisissez les espaces accessibles</legend>
+                  {data?.spaces.map((space) => (
+                    <label key={space.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        name="spaceIds"
+                        value={space.id}
+                        checked={inviteSpaceIds.includes(space.id)}
+                        onChange={(e) =>
+                          setInviteSpaceIds((current) =>
+                            e.target.checked
+                              ? [...current, space.id]
+                              : current.filter((id) => id !== space.id),
+                          )
+                        }
+                      />
+                      {space.name}
+                    </label>
+                  ))}
+                  {!data?.spaces.length && (
+                    <p className="text-sm text-[var(--ink-muted)]">
+                      Créez d’abord un espace avant d’inviter un compte limité.
+                    </p>
+                  )}
+                </fieldset>
+              )}
               <button
-                disabled={busy}
+                disabled={
+                  busy ||
+                  (inviteScope === "selected" && inviteSpaceIds.length === 0)
+                }
                 className="rounded bg-[var(--accent)] p-2 text-[var(--on-accent)]"
               >
                 Inviter un compte par e-mail
