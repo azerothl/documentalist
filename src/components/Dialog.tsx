@@ -8,12 +8,16 @@ export function Dialog({
   title,
   children,
   className = "",
+  closeLabel = "Fermer",
+  lang,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   className?: string;
+  closeLabel?: string;
+  lang?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -33,6 +37,7 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
+      lang={lang}
       className={`app-dialog ${className}`}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
@@ -95,7 +100,7 @@ export function Dialog({
           className="secondary-button"
           autoFocus
         >
-          Fermer
+          {closeLabel}
         </button>
       </div>
       {children}

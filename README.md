@@ -81,7 +81,7 @@ La compilation utilise webpack et un correctif ciblé pour les volumes Windows q
 | Édition                 | Blocs `/`, tableaux, tâches, images par URL, encadrés, coloration du code et aperçu                                                    |
 | Sauvegarde              | File de sauvegarde par document, attente avant publication, alerte si la page est quittée avant enregistrement, révisions restaurables |
 | Publication             | Instantané des documents et variables, pages masquées exclues côté serveur, retrait possible via le réglage Public                     |
-| Portail                 | Onglets Learn, Reference et Blog, lecture sans charger TipTap, sommaire qui suit la lecture, recherche (Ctrl K), menu mobile, versions et langues |
+| Portail                 | Onglets Learn, Reference et Blog, interface française ou anglaise selon la langue sélectionnée (repli français), dates localisées, lecture sans charger TipTap, sommaire, recherche (Ctrl K), menu mobile et versions |
 | Accès                   | Administrateur, rédacteur et lecteur ; mot de passe de portail vérifié côté serveur avec cookie HttpOnly                               |
 | IA                      | Question, rédaction et correction sur le contexte de la page avec OpenAI, Anthropic ou une API compatible                              |
 | Import/export           | Markdown ; adaptation GFM, Obsidian et MDX sans exécuter de JavaScript                                                                 |

@@ -20,6 +20,7 @@ import {
   type Theme,
 } from "@/lib/appearance";
 import { Dialog } from "@/components/Dialog";
+import { getPortalUi } from "@/lib/portal-i18n";
 
 const initial = JSON.stringify(DEFAULT_APPEARANCE);
 let sessionPreferences: string | null = null;
@@ -116,12 +117,24 @@ export const useAppearance = () => useContext(AppearanceContext);
 
 export function AppearanceSettings({
   variant = "button",
+  locale = "fr",
 }: {
   /** "icon" renders a round icon button for compact site headers */
   variant?: "button" | "icon";
+  locale?: string;
 }) {
   const [open, setOpen] = useState(false);
   const { preferences, update } = useAppearance();
+  const { language, messages } = getPortalUi(locale);
+  const t = messages.appearance;
+  const selectedTheme =
+    preferences.theme === "system"
+      ? t.system
+      : preferences.theme === "light"
+        ? t.light
+        : preferences.theme === "dark"
+          ? t.dark
+          : t.contrast;
   return (
     <>
       {variant === "icon" ? (
@@ -130,8 +143,8 @@ export function AppearanceSettings({
           className="site-icon-button"
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
-          aria-label="Apparence et lecture"
-          title="Apparence et lecture"
+          aria-label={t.title}
+          title={t.title}
         >
           <SunMoon size={20} aria-hidden="true" />
         </button>
@@ -142,34 +155,36 @@ export function AppearanceSettings({
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
         >
-          Apparence et lecture
+          {t.title}
         </button>
       )}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title="Apparence et lecture"
+        title={t.title}
+        closeLabel={messages.close}
+        lang={language}
       >
         <div className="grid gap-5">
           <label>
-            Thème
+            {t.theme}
             <select
-              aria-label="Thème"
+              aria-label={t.theme}
               value={preferences.theme}
               onChange={(e) =>
                 update({ theme: e.target.value as Appearance["theme"] })
               }
             >
-              <option value="system">Suivre le système</option>
-              <option value="light">Clair</option>
-              <option value="dark">Sombre — Nuit</option>
-              <option value="contrast">Contraste renforcé</option>
+              <option value="system">{t.system}</option>
+              <option value="light">{t.light}</option>
+              <option value="dark">{t.dark}</option>
+              <option value="contrast">{t.contrast}</option>
             </select>
           </label>
           <label>
-            Taille du texte
+            {t.textSize}
             <select
-              aria-label="Taille du texte"
+              aria-label={t.textSize}
               value={preferences.fontSize}
               onChange={(e) =>
                 update({
@@ -177,22 +192,22 @@ export function AppearanceSettings({
                 })
               }
             >
-              <option value={16}>16 px — Standard</option>
-              <option value={18}>18 px — Confortable</option>
-              <option value={20}>20 px — Agrandi</option>
+              <option value={16}>16 px — {t.standard}</option>
+              <option value={18}>18 px — {t.comfortable}</option>
+              <option value={20}>20 px — {t.larger}</option>
             </select>
           </label>
           <label>
-            Largeur de lecture
+            {t.readingWidth}
             <select
-              aria-label="Largeur de lecture"
+              aria-label={t.readingWidth}
               value={preferences.width}
               onChange={(e) =>
                 update({ width: e.target.value as Appearance["width"] })
               }
             >
-              <option value="comfortable">Confortable</option>
-              <option value="wide">Large</option>
+              <option value="comfortable">{t.comfortable}</option>
+              <option value="wide">{t.wide}</option>
             </select>
           </label>
           <label className="flex items-start gap-3">
@@ -203,21 +218,17 @@ export function AppearanceSettings({
               onChange={(e) => update({ readingMode: e.target.checked })}
             />
             <span>
-              Mode lecture
+              {t.readingMode}
               <span className="block text-sm text-[var(--ink-muted)]">
-                Masquer les outils de rédaction pour se concentrer sur le
-                document.
+                {t.readingModeDescription}
               </span>
             </span>
           </label>
           <p className="text-sm text-[var(--ink-muted)]">
-            Ces préférences sont enregistrées dans ce navigateur et s’appliquent
-            à tous vos espaces. Les animations suivent les préférences de votre
-            appareil.
+            {t.preferencesDescription}
           </p>
           <p role="status" className="sr-only">
-            Préférences appliquées : {preferences.theme}, texte{" "}
-            {preferences.fontSize} pixels.
+            {t.preferencesApplied(selectedTheme, preferences.fontSize)}
           </p>
         </div>
       </Dialog>
