@@ -23,6 +23,10 @@ import { database, encrypt, decrypt, dataDirectory } from "./database";
 import { hashPassword } from "./auth";
 import { SECRET_MASK, mergeSecrets } from "./secrets";
 import {
+  GitHubReadOnlyDocumentError,
+  isGitHubImportedDocument,
+} from "./document-access";
+import {
   spacePatchSchema,
   documentPatchSchema,
   validateDocumentTree,
@@ -55,6 +59,41 @@ const shared = globalThis as typeof globalThis & {
   documentalistWrites?: Promise<void>;
 };
 const revisions = new WeakMap<StoreData, number>();
+
+function assertDocumentEditable(data: StoreData, document: DocumentRecord) {
+  const space = data.spaces.find(
+    (candidate) => candidate.id === document.spaceId,
+  );
+  if (space && isGitHubImportedDocument(space, document)) {
+    throw new GitHubReadOnlyDocumentError();
+  }
+}
+
+function documentDescendants(data: StoreData, id: string): DocumentRecord[] {
+  const result: DocumentRecord[] = [];
+  const pending = [id];
+  const seen = new Set<string>();
+  while (pending.length) {
+    const current = pending.pop()!;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    const document = data.documents.find(
+      (candidate) => candidate.id === current,
+    );
+    if (document) result.push(document);
+    for (const child of data.documents) {
+      if (child.parentId === current) pending.push(child.id);
+    }
+  }
+  return result;
+}
+
+function assertNoGitHubImportedDocuments(
+  data: StoreData,
+  documents: DocumentRecord[],
+) {
+  for (const document of documents) assertDocumentEditable(data, document);
+}
 
 async function ensureStore(): Promise<StoreData> {
   const db = database();
@@ -396,7 +435,6 @@ export async function updateDocument(
       | "tags"
       | "locale"
       | "translationOf"
-      | "sourcePath"
       | "section"
       | "date"
       | "markdownFormat"
@@ -410,6 +448,7 @@ export async function updateDocument(
     migrateStore(data);
     const doc = data.documents.find((d) => d.id === id);
     if (!doc) return undefined;
+    assertDocumentEditable(data, doc);
     if (
       options?.expectedUpdatedAt &&
       options.expectedUpdatedAt !== doc.updatedAt
@@ -418,6 +457,12 @@ export async function updateDocument(
         "Conflit : ce document a été modifié par une autre personne. Rechargez-le avant de réessayer.",
       );
     patch = documentPatchSchema.parse(patch);
+    if (
+      patch.parentId !== undefined ||
+      (patch.section !== undefined && patch.section !== docSection(doc))
+    ) {
+      assertNoGitHubImportedDocuments(data, documentDescendants(data, doc.id));
+    }
 
     if (options?.revision && patch.content) {
       const rev: Revision = {
@@ -464,6 +509,108 @@ export async function reorderDocuments(
 ): Promise<DocumentRecord[]> {
   return enqueue(async (data) => {
     migrateStore(data);
+    const space = data.spaces.find((candidate) => candidate.id === spaceId);
+    if (space?.importSource?.provider === "github") {
+      const ids = [...new Set(orderedIds)];
+      if (ids.length !== orderedIds.length) {
+        throw new Error("Chaque document ne peut apparaître qu’une fois.");
+      }
+      const ordered = ids.map((id) =>
+        data.documents.find((doc) => doc.id === id && doc.spaceId === spaceId),
+      );
+      if (ordered.some((doc) => !doc)) {
+        throw new Error("Un des documents à déplacer est introuvable.");
+      }
+      const orderedDocs = ordered as DocumentRecord[];
+      if (orderedDocs.some((doc) => isGitHubImportedDocument(space, doc))) {
+        throw new GitHubReadOnlyDocumentError();
+      }
+      if (orderedDocs.length === 0) {
+        return structuredClone(
+          data.documents.filter((doc) => doc.spaceId === spaceId),
+        );
+      }
+
+      const locale = orderedDocs[0].locale;
+      if (orderedDocs.some((doc) => doc.locale !== locale)) {
+        throw new Error(
+          "Les documents déplacés doivent être dans la même langue.",
+        );
+      }
+      const parent = parentId
+        ? data.documents.find(
+            (doc) => doc.id === parentId && doc.spaceId === spaceId,
+          )
+        : undefined;
+      if (parentId && !parent) {
+        throw new Error("La destination du déplacement est introuvable.");
+      }
+      if (parent && parent.locale !== locale) {
+        throw new Error("La destination doit être dans la même langue.");
+      }
+      const section = parent ? docSection(parent) : docSection(orderedDocs[0]);
+      if (orderedDocs.some((doc) => docSection(doc) !== section)) {
+        throw new Error(
+          "Les documents déplacés doivent rester dans le même onglet.",
+        );
+      }
+      const movingDocs = orderedDocs.filter((doc) => doc.parentId !== parentId);
+      if (movingDocs.length > 1) {
+        throw new Error("Un seul document peut être déplacé à la fois.");
+      }
+      for (const moving of movingDocs) {
+        assertNoGitHubImportedDocuments(
+          data,
+          documentDescendants(data, moving.id),
+        );
+      }
+
+      const expectedLocalIds = data.documents
+        .filter(
+          (doc) =>
+            doc.spaceId === spaceId &&
+            doc.parentId === parentId &&
+            doc.locale === locale &&
+            docSection(doc) === section &&
+            !isGitHubImportedDocument(space, doc),
+        )
+        .map((doc) => doc.id);
+      const expectedIds = new Set([
+        ...expectedLocalIds,
+        ...movingDocs.map((doc) => doc.id),
+      ]);
+      if (
+        expectedIds.size !== orderedDocs.length ||
+        orderedDocs.some((doc) => !expectedIds.has(doc.id))
+      ) {
+        throw new Error(
+          "La liste des pages locales à déplacer est incomplète.",
+        );
+      }
+
+      const importedSiblings = data.documents.filter(
+        (doc) =>
+          doc.spaceId === spaceId &&
+          doc.parentId === parentId &&
+          doc.locale === locale &&
+          docSection(doc) === section &&
+          isGitHubImportedDocument(space, doc),
+      );
+      const firstLocalPosition =
+        importedSiblings.reduce((max, doc) => Math.max(max, doc.position), -1) +
+        1;
+      orderedDocs.forEach((doc, index) => {
+        doc.parentId = parentId;
+        doc.position = firstLocalPosition + index;
+        doc.updatedAt = new Date().toISOString();
+        if (parent) setSection(data, doc.id, section);
+      });
+      await persist(data);
+      return structuredClone(
+        data.documents.filter((doc) => doc.spaceId === spaceId),
+      );
+    }
+
     orderedIds.forEach((id, index) => {
       const doc = data.documents.find(
         (d) => d.id === id && d.spaceId === spaceId,
@@ -499,15 +646,11 @@ function setSection(data: StoreData, id: string, section: DocSection) {
 
 export async function deleteDocument(id: string): Promise<boolean> {
   return enqueue(async (data) => {
-    const ids = new Set<string>();
-    function collect(target: string) {
-      ids.add(target);
-      for (const d of data.documents) {
-        if (d.parentId === target) collect(d.id);
-      }
-    }
+    migrateStore(data);
     if (!data.documents.some((d) => d.id === id)) return false;
-    collect(id);
+    const descendants = documentDescendants(data, id);
+    assertNoGitHubImportedDocuments(data, descendants);
+    const ids = new Set(descendants.map((doc) => doc.id));
     data.documents = data.documents.filter((d) => !ids.has(d.id));
     data.revisions = data.revisions.filter((r) => !ids.has(r.documentId));
     data.comments = (data.comments ?? []).filter((c) => !ids.has(c.documentId));
@@ -526,7 +669,9 @@ export async function restoreRevision(
   revisionId: string,
 ): Promise<DocumentRecord | undefined> {
   return enqueue(async (data) => {
+    migrateStore(data);
     const doc = data.documents.find((d) => d.id === documentId);
+    if (doc) assertDocumentEditable(data, doc);
     const rev = data.revisions.find(
       (r) => r.id === revisionId && r.documentId === documentId,
     );
@@ -650,6 +795,7 @@ export async function createTranslation(
       locale,
       translationOf: rootId,
       title: `${source.title} (${locale})`,
+      sourcePath: null,
       slug: uniqueSlug(
         `${source.slug}-${locale}`,
         siblings.map((d) => d.slug),
@@ -1032,6 +1178,7 @@ export async function importRepositoryFiles(
         space.importSource?.syncIntervalMinutes ??
         60,
     });
+    space.importSource = source;
 
     const folderIds = new Map<string, string>();
     // Reuse existing folders keyed by sourcePath.
@@ -1269,7 +1416,9 @@ export async function importRepositoryFiles(
         (d) =>
           d.spaceId === space.id &&
           d.locale === locale &&
-          d.sourcePath &&
+          (provider === "github"
+            ? isGitHubImportedDocument(space, d)
+            : Boolean(d.sourcePath)) &&
           docSection(d) === section &&
           (d.kind === "page" || d.kind === "category"),
       );
@@ -1331,6 +1480,25 @@ export async function importRepositoryFiles(
         siblings.forEach((doc, index) => {
           doc.position = index;
         });
+        if (provider === "github") {
+          const localSiblings = data.documents
+            .filter(
+              (doc) =>
+                doc.spaceId === space.id &&
+                doc.parentId === siblings[0]?.parentId &&
+                doc.locale === locale &&
+                docSection(doc) === section &&
+                !isGitHubImportedDocument(space, doc),
+            )
+            .sort(
+              (a, b) =>
+                a.position - b.position ||
+                a.createdAt.localeCompare(b.createdAt),
+            );
+          localSiblings.forEach((doc, index) => {
+            doc.position = siblings.length + index;
+          });
+        }
       }
     }
 

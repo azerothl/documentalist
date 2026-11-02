@@ -24,6 +24,7 @@ type Props = {
   onAddComment: (body: string) => void;
   onToggleComment: (id: string, resolved: boolean) => void;
   onPatchDocument: (patch: Partial<DocumentRecord>) => void;
+  readOnlyDocument?: boolean;
   onJumpToHeading: (index: number) => void;
   onInsertAiText: (text: string) => void;
 };
@@ -42,6 +43,7 @@ export function SidePanel({
   onAddComment,
   onToggleComment,
   onPatchDocument,
+  readOnlyDocument = false,
   onJumpToHeading,
   onInsertAiText,
 }: Props) {
@@ -187,6 +189,7 @@ export function SidePanel({
                 className="rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
                 value={document.seoTitle ?? ""}
                 placeholder={document.title}
+                disabled={readOnlyDocument}
                 onChange={(e) =>
                   onPatchDocument({ seoTitle: e.target.value || null })
                 }
@@ -201,6 +204,7 @@ export function SidePanel({
                 className="resize-none rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
                 value={document.seoDescription ?? ""}
                 placeholder="Courte description pour les moteurs de recherche"
+                disabled={readOnlyDocument}
                 onChange={(e) =>
                   onPatchDocument({ seoDescription: e.target.value || null })
                 }
@@ -213,6 +217,7 @@ export function SidePanel({
               <input
                 className="rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 font-mono text-xs"
                 value={document.slug}
+                disabled={readOnlyDocument}
                 onChange={(e) => onPatchDocument({ slug: e.target.value })}
               />
             </label>
@@ -224,6 +229,7 @@ export function SidePanel({
                 className="rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-xs"
                 value={(document.tags ?? []).join(", ")}
                 placeholder="intro, api, guide"
+                disabled={readOnlyDocument}
                 onChange={(e) =>
                   onPatchDocument({
                     tags: e.target.value
@@ -238,6 +244,7 @@ export function SidePanel({
               <input
                 type="checkbox"
                 checked={document.hidden}
+                disabled={readOnlyDocument}
                 onChange={(e) => onPatchDocument({ hidden: e.target.checked })}
               />
               Masquer sur le site public

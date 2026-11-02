@@ -164,6 +164,13 @@ export function SpaceSyncPanel({
               {importSource.lastSyncError}
             </p>
           ) : null}
+          {importSource.provider === "github" ? (
+            <p className="text-xs text-[var(--ink-muted)]">
+              Les pages importées sont en lecture seule. Détacher GitHub arrête
+              la synchronisation et rend cette copie modifiable dans
+              Documentalist.
+            </p>
+          ) : null}
           <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"
@@ -227,6 +234,14 @@ export function SpaceSyncPanel({
               disabled={busy || syncBusy}
               className="rounded-md border border-[var(--line)] px-2.5 py-1 text-xs text-[var(--ink-muted)]"
               onClick={() => {
+                if (
+                  importSource.provider === "github" &&
+                  !window.confirm(
+                    "Détacher GitHub arrêtera la synchronisation et rendra cette copie modifiable dans Documentalist. Les changements faits ici ne seront pas envoyés au dépôt. Continuer ?",
+                  )
+                ) {
+                  return;
+                }
                 setBusy(true);
                 setMessage("");
                 void fetch(`/api/spaces/${spaceId}`, {
