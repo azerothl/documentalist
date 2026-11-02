@@ -555,7 +555,7 @@ test(
           );
           assert.deepEqual(
             await page.locator(".doc-callout-label").allTextContents(),
-            ["Information", "Attention", "Succès"],
+            ["Information", "Warning", "Success"],
           );
           assert.equal(
             await page
@@ -637,7 +637,7 @@ test(
             .waitFor();
           await page.keyboard.press("Escape");
           await page
-            .getByLabel("Rechercher dans la documentation")
+            .getByLabel("Search the documentation")
             .fill("introuvable-zzzzz");
           await page.getByRole("status").waitFor();
           assert.ok(
@@ -698,11 +698,11 @@ test(
               0,
             );
             await rp
-              .getByLabel("Rechercher dans la documentation", { exact: true })
+              .getByLabel("Search the documentation", { exact: true })
               .fill("backup");
             await rp
               .getByRole("region", {
-                name: "Résultats de recherche",
+                name: "Search results",
                 exact: true,
               })
               .getByRole("link", { name: /Reading guide/ })
