@@ -82,6 +82,9 @@ export type Space = {
   name: string;
   slug: string;
   description: string;
+  accessMode: PortalAccessMode;
+  allowedEmails: string[];
+  /** True only when the published portal is freely accessible. */
   isPublic: boolean;
   accentColor: string;
   accessPassword: string | null;
@@ -99,6 +102,8 @@ export type Space = {
   /** Present when the Space was (or can be) filled from a remote docs source */
   importSource: SpaceImportSource | null;
 };
+
+export type PortalAccessMode = "public" | "password" | "magic_link";
 
 export type PublishedSnapshot = {
   publishedAt: string;

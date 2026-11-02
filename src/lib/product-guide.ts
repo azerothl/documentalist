@@ -162,7 +162,7 @@ export function buildProductGuideDocuments(
           { type: "heading", level: 2, text: "Space" },
           {
             type: "paragraph",
-            text: "A documentation collection (product, API, runbook). Private by default until you publish. Each Space has its own tree, accent colour, locales, version label, optional portal password, and optional AI override.",
+            text: "A documentation collection (product, API, runbook). Each Space has its own tree, accent colour, locales, version label, portal access mode (public, shared code, or invited email links), and optional AI override.",
           },
           { type: "heading", level: 2, text: "Document" },
           {
@@ -299,8 +299,8 @@ export function buildProductGuideDocuments(
           {
             type: "bullet",
             items: [
-              "isPublic — controls whether the portal is listed/reachable as a public site",
-              "Optional portal password (HttpOnly cookie after unlock)",
+              "Choose public, shared-code, or invited-email magic-link access when publishing",
+              "Code access uses an HttpOnly cookie after unlock; magic-link access lasts 8 hours and can be revoked per invited address",
               "Hidden pages — excluded from the published portal but kept in /app",
             ],
           },

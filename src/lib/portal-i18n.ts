@@ -111,6 +111,15 @@ const messages = {
       checking: "Vérification…",
       open: "Ouvrir le portail",
     },
+    magicLinkRequest: {
+      description: "Ce portail est réservé aux personnes invitées.",
+      email: "Adresse e-mail",
+      sent: "Si cette adresse a été invitée, un lien d’accès vient de lui être envoyé.",
+      unavailable: "Demande impossible. Réessayez plus tard.",
+      rateLimited: "Trop de demandes. Réessayez dans dix minutes.",
+      sending: "Envoi…",
+      submit: "Recevoir un lien d’accès",
+    },
   },
   en: {
     skipToContent: "Skip to main content",
@@ -221,6 +230,15 @@ const messages = {
       unavailable: "Unable to unlock the portal.",
       checking: "Checking…",
       open: "Open portal",
+    },
+    magicLinkRequest: {
+      description: "This portal is for invited people only.",
+      email: "Email address",
+      sent: "If this address was invited, an access link has been sent.",
+      unavailable: "Unable to request access. Try again later.",
+      rateLimited: "Too many requests. Try again in ten minutes.",
+      sending: "Sending…",
+      submit: "Send an access link",
     },
   },
 } as const;

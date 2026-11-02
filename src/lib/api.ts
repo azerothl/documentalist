@@ -135,7 +135,7 @@ function validateBody(path: string, method: string, body: unknown) {
 
 export function secureRoute<A extends unknown[]>(
   handler: (request: Request, ...args: A) => Promise<Response>,
-  options: { public?: boolean; admin?: boolean } = {},
+  options: { public?: boolean; admin?: boolean; editor?: boolean } = {},
 ) {
   return async (request: Request, ...args: A): Promise<Response> => {
     try {
@@ -155,6 +155,7 @@ export function secureRoute<A extends unknown[]>(
       if (
         user &&
         ((admin && user.role !== "admin") ||
+          (options.editor && user.role === "viewer") ||
           (mutation && user.role === "viewer"))
       )
         return NextResponse.json(

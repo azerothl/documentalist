@@ -8,6 +8,7 @@ type TeamData = {
     name: string;
     role: string;
     disabled: number;
+    password_set: number;
   }[];
   activity: {
     id: number;
@@ -59,6 +60,7 @@ export function TeamPanel({ admin }: { admin: boolean }) {
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Échec de l’opération.");
+      await load().catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -93,10 +95,10 @@ export function TeamPanel({ admin }: { admin: boolean }) {
               <table className="w-full text-left">
                 <thead>
                   <tr>
-                    <th>Compte</th>
+                    <th>Utilisateur</th>
                     <th>Rôle</th>
                     <th>Accès</th>
-                    <th>Mot de passe</th>
+                    <th>Statut et lien</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -140,19 +142,21 @@ export function TeamPanel({ admin }: { admin: boolean }) {
                       <td>
                         <button
                           disabled={busy}
-                          onClick={() => {
-                            const password = window.prompt(
-                              "Nouveau mot de passe (12 caractères minimum)",
-                            );
-                            if (password)
-                              void action("/api/admin/team", "PATCH", {
-                                id: u.id,
-                                password,
-                              });
-                          }}
+                          onClick={() =>
+                            void action("/api/admin/team/resend", "POST", {
+                              id: u.id,
+                            })
+                          }
                         >
-                          Réinitialiser
+                          {u.password_set
+                            ? "Envoyer un lien de réinitialisation"
+                            : "Renvoyer l’invitation"}
                         </button>
+                        <p className="text-xs text-[var(--ink-muted)]">
+                          {u.password_set
+                            ? "Mot de passe défini"
+                            : "Invitation en attente"}
+                        </p>
                       </td>
                     </tr>
                   ))}
@@ -180,16 +184,6 @@ export function TeamPanel({ admin }: { admin: boolean }) {
                 <input name="email" type="email" required />
               </label>
               <label>
-                Mot de passe initial
-                <input
-                  name="password"
-                  type="password"
-                  required
-                  minLength={12}
-                  autoComplete="new-password"
-                />
-              </label>
-              <label>
                 Rôle
                 <select name="role">
                   <option value="editor">Rédacteur</option>
@@ -201,7 +195,7 @@ export function TeamPanel({ admin }: { admin: boolean }) {
                 disabled={busy}
                 className="rounded bg-[var(--accent)] p-2 text-[var(--on-accent)]"
               >
-                Ajouter un compte
+                Inviter un compte par e-mail
               </button>
             </form>
           </section>

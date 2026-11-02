@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import { database, audit, dataDirectory } from "./database";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import type { Space } from "./types";
 
 export type Role = "admin" | "editor" | "viewer";
 export type User = { id: string; email: string; name: string; role: Role };
@@ -22,7 +23,8 @@ export const cookieOptions = {
     process.env.DOCUMENTALIST_COOKIE_SECURE !== "false",
   path: "/",
 };
-const digest = (s: string) => createHash("sha256").update(s).digest("hex");
+export const tokenDigest = (s: string) =>
+  createHash("sha256").update(s).digest("hex");
 
 export function hashPassword(value: string) {
   const salt = randomBytes(16).toString("hex");
@@ -85,9 +87,96 @@ export function createUser(
   return user;
 }
 
+export function createInvitedUser(
+  input: { email: string; name: string; role: Role },
+  actor = "administrator",
+) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))
+    throw new Error("Adresse e-mail invalide.");
+  const email = input.email.trim().toLowerCase();
+  const name = input.name.trim().slice(0, 100) || email;
+  const db = database();
+  if (db.prepare("SELECT 1 FROM users WHERE email=?").get(email))
+    throw new Error("Un compte existe déjà avec cette adresse e-mail.");
+  const user: User = {
+    id: randomBytes(16).toString("hex"),
+    email,
+    name,
+    role: input.role,
+  };
+  // Keep the existing NOT NULL schema while ensuring the placeholder cannot
+  // be used to authenticate. password_set gates all login attempts.
+  const passwordHash = hashPassword(randomBytes(48).toString("hex"));
+  db.prepare(
+    "INSERT INTO users(id,email,name,password_hash,role,password_set) VALUES (?,?,?,?,?,0)",
+  ).run(user.id, user.email, user.name, passwordHash, user.role);
+  audit(actor, "account.invited", user.id);
+  return user;
+}
+
+export type AccountTokenPurpose = "setup" | "reset";
+
+export function createAccountToken(
+  userId: string,
+  purpose: AccountTokenPurpose,
+) {
+  const token = randomBytes(32).toString("base64url");
+  const now = Date.now();
+  database().transaction(() => {
+    database()
+      .prepare("DELETE FROM account_tokens WHERE expires_at<?")
+      .run(now);
+    database()
+      .prepare("DELETE FROM account_tokens WHERE user_id=?")
+      .run(userId);
+    database()
+      .prepare(
+        "INSERT INTO account_tokens(token_hash,user_id,purpose,expires_at,created_at) VALUES (?,?,?,?,?)",
+      )
+      .run(
+        tokenDigest(token),
+        userId,
+        purpose,
+        now + (purpose === "setup" ? 24 : 1) * 60 * 60 * 1000,
+        now,
+      );
+  })();
+  return token;
+}
+
+export function setPasswordFromAccountToken(token: string, password: string) {
+  if (password.length < 12 || password.length > 256)
+    throw new Error("Utilisez un mot de passe de 12 à 256 caractères.");
+  const db = database();
+  const tokenHash = tokenDigest(token);
+  return db.transaction(() => {
+    const row = db
+      .prepare(
+        `SELECT t.user_id,u.email,u.disabled FROM account_tokens t
+         JOIN users u ON u.id=t.user_id
+         WHERE t.token_hash=? AND t.expires_at>?`,
+      )
+      .get(tokenHash, Date.now()) as
+      { user_id: string; email: string; disabled: number } | undefined;
+    if (!row || row.disabled)
+      throw new Error(
+        "Ce lien est invalide ou a expiré. Demandez-en un nouveau.",
+      );
+    db.prepare(
+      "UPDATE users SET password_hash=?,password_set=1 WHERE id=?",
+    ).run(hashPassword(password), row.user_id);
+    db.prepare("DELETE FROM account_tokens WHERE user_id=?").run(row.user_id);
+    db.prepare("DELETE FROM sessions WHERE user_id=?").run(row.user_id);
+    audit(row.email, "account.password_set", row.user_id);
+    return row.email;
+  })();
+}
+
 export function login(email: string, password: string) {
   const row = database()
-    .prepare("SELECT * FROM users WHERE email=? AND disabled=0")
+    .prepare(
+      "SELECT * FROM users WHERE email=? AND disabled=0 AND password_set=1",
+    )
     .get(email.trim().toLowerCase()) as
     (User & { password_hash: string }) | undefined;
   // Compute a hash even for an unknown account to avoid the obvious timing gap.
@@ -98,7 +187,7 @@ export function login(email: string, password: string) {
   const token = randomBytes(32).toString("hex");
   database()
     .prepare("INSERT INTO sessions VALUES (?,?,?)")
-    .run(digest(token), row.id, Date.now() + 8 * 60 * 60 * 1000);
+    .run(tokenDigest(token), row.id, Date.now() + 8 * 60 * 60 * 1000);
   database()
     .prepare("DELETE FROM sessions WHERE expires_at < ?")
     .run(Date.now());
@@ -115,7 +204,7 @@ export async function currentUser(): Promise<User | null> {
         `SELECT u.id,u.email,u.name,u.role FROM sessions s JOIN users u ON s.user_id=u.id
     WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0`,
       )
-      .get(digest(token), Date.now()) as User | undefined) ?? null
+      .get(tokenDigest(token), Date.now()) as User | undefined) ?? null
   );
 }
 
@@ -128,7 +217,7 @@ export async function requireUser() {
 export function logout(token: string) {
   database()
     .prepare("DELETE FROM sessions WHERE token_hash=?")
-    .run(digest(token));
+    .run(tokenDigest(token));
 }
 
 export function portalCookieName(id: string) {
@@ -141,10 +230,105 @@ export function portalTicket(
 ) {
   return `${expires}.${createHmac("sha256", passwordHash).update(`${id}:${expires}`).digest("hex")}`;
 }
-export async function portalAllowed(id: string, hash: string | null) {
-  if (!hash) return true;
-  const ticket = (await cookies()).get(portalCookieName(id))?.value;
+
+export function createPortalMagicToken(spaceId: string, email: string) {
+  const token = randomBytes(32).toString("base64url");
+  const db = database();
+  const normalizedEmail = email.trim().toLowerCase();
+  db.transaction(() => {
+    db.prepare("DELETE FROM portal_magic_tokens WHERE expires_at<?").run(
+      Date.now(),
+    );
+    db.prepare(
+      "DELETE FROM portal_magic_tokens WHERE space_id=? AND email_hash=?",
+    ).run(spaceId, tokenDigest(normalizedEmail));
+    db.prepare(
+      "INSERT INTO portal_magic_tokens(token_hash,space_id,email_hash,expires_at) VALUES (?,?,?,?)",
+    ).run(
+      tokenDigest(token),
+      spaceId,
+      tokenDigest(normalizedEmail),
+      Date.now() + 24 * 60 * 60 * 1000,
+    );
+  })();
+  return token;
+}
+
+export function consumePortalMagicToken(token: string) {
+  const db = database();
+  const tokenHash = tokenDigest(token);
+  return db.transaction(() => {
+    const row = db
+      .prepare(
+        "SELECT space_id,email_hash FROM portal_magic_tokens WHERE token_hash=? AND expires_at>?",
+      )
+      .get(tokenHash, Date.now()) as
+      { space_id: string; email_hash: string } | undefined;
+    if (!row) return null;
+    db.prepare("DELETE FROM portal_magic_tokens WHERE token_hash=?").run(
+      tokenHash,
+    );
+    const sessionToken = randomBytes(32).toString("base64url");
+    db.prepare(
+      "INSERT INTO portal_access_sessions(token_hash,space_id,email_hash,expires_at) VALUES (?,?,?,?)",
+    ).run(
+      tokenDigest(sessionToken),
+      row.space_id,
+      row.email_hash,
+      Date.now() + 8 * 60 * 60 * 1000,
+    );
+    db.prepare("DELETE FROM portal_access_sessions WHERE expires_at<?").run(
+      Date.now(),
+    );
+    return { ...row, sessionToken };
+  })();
+}
+
+export function getPortalMagicToken(token: string) {
+  return database()
+    .prepare(
+      "SELECT space_id,email_hash FROM portal_magic_tokens WHERE token_hash=? AND expires_at>?",
+    )
+    .get(tokenDigest(token), Date.now()) as
+    { space_id: string; email_hash: string } | undefined;
+}
+
+export function revokePortalMagicAccess(spaceId: string, email: string) {
+  const db = database();
+  const normalizedEmail = email.trim().toLowerCase();
+  db.transaction(() => {
+    db.prepare(
+      "DELETE FROM portal_magic_tokens WHERE space_id=? AND email_hash=?",
+    ).run(spaceId, tokenDigest(normalizedEmail));
+    db.prepare(
+      "DELETE FROM portal_access_sessions WHERE space_id=? AND email_hash=?",
+    ).run(spaceId, tokenDigest(normalizedEmail));
+  })();
+}
+
+export async function portalAllowed(
+  space: Pick<Space, "id" | "accessMode" | "accessPassword" | "allowedEmails">,
+) {
+  const mode = space.accessMode;
+  if (mode === "public") return true;
+  const ticket = (await cookies()).get(portalCookieName(space.id))?.value;
   if (!ticket) return false;
+  if (mode === "magic_link") {
+    const session = database()
+      .prepare(
+        "SELECT email_hash FROM portal_access_sessions WHERE token_hash=? AND space_id=? AND expires_at>?",
+      )
+      .get(tokenDigest(ticket), space.id, Date.now()) as
+      { email_hash: string } | undefined;
+    return Boolean(
+      session &&
+      (space.allowedEmails ?? []).some(
+        (email) => tokenDigest(email.toLowerCase()) === session.email_hash,
+      ),
+    );
+  }
+  const hash = space.accessPassword;
+  if (!hash) return false;
   const expires = Number(ticket.split(".")[0]);
   if (
     !Number.isFinite(expires) ||
@@ -152,7 +336,7 @@ export async function portalAllowed(id: string, hash: string | null) {
     expires > Date.now() + 8 * 60 * 60 * 1000
   )
     return false;
-  const expected = Buffer.from(portalTicket(id, hash, expires));
+  const expected = Buffer.from(portalTicket(space.id, hash, expires));
   const actual = Buffer.from(ticket);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }

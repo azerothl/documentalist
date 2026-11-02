@@ -8,6 +8,7 @@ import { defaultSection, isSection, sectionDocuments } from "@/lib/sections";
 import type { DocSection, DocumentRecord } from "@/lib/types";
 import { portalAllowed } from "@/lib/auth";
 import { PortalUnlock } from "@/components/PortalUnlock";
+import { PortalMagicLinkRequest } from "@/components/PortalMagicLinkRequest";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +48,8 @@ export async function generateMetadata({
   const { spaceSlug, path = [] } = await params;
   const { lang } = await searchParams;
   const space = await getSpace(spaceSlug);
-  if (!space?.publishedSnapshot || !space.isPublic)
-    return { title: "Page introuvable" };
-  if (!(await portalAllowed(space.id, space.accessPassword)))
+  if (!space?.publishedSnapshot) return { title: "Page introuvable" };
+  if (!(await portalAllowed(space)))
     return {
       title: "Portail protégé",
       robots: { index: false, follow: false },
@@ -72,6 +72,9 @@ export async function generateMetadata({
       ? `Blog — ${space.name}`
       : doc?.seoTitle || doc?.title || space.name,
     description: doc?.seoDescription || space.description,
+    ...(space.accessMode === "public"
+      ? {}
+      : { robots: { index: false, follow: false } }),
   };
 }
 
@@ -79,11 +82,17 @@ export default async function PortalDocPage({ params, searchParams }: Props) {
   const { spaceSlug, path = [] } = await params;
   const { lang } = await searchParams;
   const space = await getSpace(spaceSlug);
-  if (!space?.publishedSnapshot || !space.isPublic) notFound();
+  if (!space?.publishedSnapshot) notFound();
   const locale = lang || space.defaultLocale || "en";
-  if (!(await portalAllowed(space.id, space.accessPassword)))
-    return (
+  if (!(await portalAllowed(space)))
+    return space.accessMode === "password" ? (
       <PortalUnlock slug={space.slug} name={space.name} locale={locale} />
+    ) : (
+      <PortalMagicLinkRequest
+        slug={space.slug}
+        name={space.name}
+        locale={locale}
+      />
     );
   const allVariables = await listVariables();
   const all = await listSpaces();
@@ -92,7 +101,7 @@ export default async function PortalDocPage({ params, searchParams }: Props) {
       (s) =>
         s.versionGroupId === space.versionGroupId &&
         s.publishedSnapshot &&
-        s.isPublic,
+        s.accessMode === "public",
     )
     .map((s) => ({ id: s.id, slug: s.slug, versionLabel: s.versionLabel }));
   const { space: publicSpace, documents } = publicPortalData(

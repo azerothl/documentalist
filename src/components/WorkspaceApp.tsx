@@ -12,6 +12,7 @@ import { GitHubImportModal } from "@/components/GitHubImportModal";
 import { IntegrationsPanel } from "@/components/IntegrationsPanel";
 import { LlmSettingsFields } from "@/components/LlmSettingsFields";
 import { SpaceSyncPanel } from "@/components/SpaceSyncPanel";
+import { PortalAccessInvites } from "@/components/PortalAccessInvites";
 import { SidePanel } from "@/components/SidePanel";
 import {
   AccountNavigation,
@@ -40,6 +41,7 @@ import type {
   Integration,
   LlmSettings,
   Organization,
+  PortalAccessMode,
   Snippet,
   Space,
   Template,
@@ -182,6 +184,10 @@ export function WorkspaceApp({
   const [moving, setMoving] = useState(false);
   const [operationStatus, setOperationStatus] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [publishAccessOpen, setPublishAccessOpen] = useState(false);
+  const [publishAccessMode, setPublishAccessMode] = useState<PortalAccessMode>(
+    initial.space.accessMode,
+  );
   const [syncBusy, setSyncBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -696,16 +702,32 @@ export function WorkspaceApp({
     setNavigationOpen(false);
   }
 
-  async function publish() {
+  async function publish(access?: {
+    mode: PortalAccessMode;
+    password: string;
+  }) {
     if (publishing) return;
     setPublishing(true);
     try {
       await flushPending();
       const res = await fetch(`/api/spaces/${payload.space.id}/publish`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          access
+            ? {
+                accessMode: access.mode,
+                ...(access.mode === "password"
+                  ? { accessPassword: access.password || null }
+                  : {}),
+              }
+            : {},
+        ),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
       setPayload((prev) => ({ ...prev, space: data.space }));
+      setPublishAccessOpen(false);
       setOperationStatus(
         "Publication réussie. La nouvelle version est disponible sur le portail.",
       );
@@ -1393,7 +1415,11 @@ export function WorkspaceApp({
               type="button"
               className="primary-button"
               disabled={publishing}
-              onClick={() => void publish()}
+              onClick={() => {
+                setNotice("");
+                setPublishAccessMode(payload.space.accessMode);
+                setPublishAccessOpen(true);
+              }}
             >
               {publishing ? "Publication…" : "Publier"}
             </button>
@@ -1933,9 +1959,11 @@ export function WorkspaceApp({
                   name: String(fd.get("name") ?? ""),
                   description: String(fd.get("description") ?? ""),
                   accentColor: String(fd.get("accentColor") ?? "#1F425B"),
+                  accessMode: String(
+                    fd.get("accessMode") ?? payload.space.accessMode,
+                  ) as PortalAccessMode,
                   accessPassword:
                     String(fd.get("accessPassword") ?? "") || null,
-                  isPublic: fd.get("isPublic") === "on",
                   defaultLocale: String(fd.get("defaultLocale") ?? "en"),
                   locales: locales.length ? locales : ["en"],
                   versionLabel: String(fd.get("versionLabel") ?? "current"),
@@ -1996,7 +2024,25 @@ export function WorkspaceApp({
                 />
               </label>
               <label className="text-sm">
-                Mot de passe du site
+                Accès au portail
+                <select
+                  name="accessMode"
+                  defaultValue={payload.space.accessMode}
+                  className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                >
+                  <option value="public">Public, sans restriction</option>
+                  <option value="password">Privé, avec un code partagé</option>
+                  <option value="magic_link">
+                    Privé, par lien magique nominatif
+                  </option>
+                </select>
+              </label>
+              <p className="text-xs text-[var(--ink-muted)]">
+                Le choix est confirmé au moment de publier. Les portails privés
+                ne sont pas affichés dans le répertoire public.
+              </p>
+              <label className="text-sm">
+                Code d’accès (mode « code partagé »)
                 <input
                   name="accessPassword"
                   type="password"
@@ -2004,14 +2050,10 @@ export function WorkspaceApp({
                   className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
                 />
               </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  name="isPublic"
-                  type="checkbox"
-                  defaultChecked={payload.space.isPublic}
-                />
-                Public
-              </label>
+              {payload.space.accessMode === "magic_link" &&
+              account.role !== "viewer" ? (
+                <PortalAccessInvites spaceId={payload.space.id} />
+              ) : null}
               <div className="mt-2 flex justify-end gap-2">
                 <button
                   type="button"
@@ -2241,6 +2283,99 @@ export function WorkspaceApp({
               {moving ? "Déplacement…" : "Déplacer"}
             </button>
           </div>
+        </form>
+      </Dialog>
+      <Dialog
+        open={publishAccessOpen}
+        onClose={() => setPublishAccessOpen(false)}
+        title="Publier la documentation"
+      >
+        <form
+          className="mt-4 flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const mode = String(
+              data.get("publishAccessMode"),
+            ) as PortalAccessMode;
+            void publish({
+              mode,
+              password: String(data.get("publishAccessPassword") ?? ""),
+            });
+          }}
+        >
+          <p>Choisissez qui pourra lire cette version publiée.</p>
+          <label>
+            Mode d’accès
+            <select
+              name="publishAccessMode"
+              value={publishAccessMode}
+              onChange={(event) =>
+                setPublishAccessMode(event.target.value as PortalAccessMode)
+              }
+              className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+            >
+              <option value="public">Public, sans restriction</option>
+              <option value="password">Privé, avec un code partagé</option>
+              <option value="magic_link">
+                Privé, par lien magique nominatif
+              </option>
+            </select>
+          </label>
+          {publishAccessMode === "password" ? (
+            <label>
+              Code d’accès
+              <input
+                name="publishAccessPassword"
+                type="password"
+                required={!payload.space.accessPassword}
+                defaultValue={payload.space.accessPassword ?? ""}
+                autoComplete="new-password"
+                maxLength={256}
+                className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+              />
+            </label>
+          ) : null}
+          {publishAccessMode === "magic_link" ? (
+            <>
+              <p className="text-sm text-[var(--ink-muted)]">
+                Seules les adresses invitées ci-dessous pourront demander un
+                lien.
+              </p>
+              {payload.space.accessMode === "magic_link" &&
+              account.role !== "viewer" ? (
+                <PortalAccessInvites spaceId={payload.space.id} />
+              ) : (
+                <p className="rounded border border-[var(--line)] p-3 text-sm">
+                  Pour publier par lien magique, choisissez d’abord ce mode dans
+                  les réglages de l’espace, enregistrez-le et invitez les
+                  personnes autorisées. Revenez ensuite ici pour publier.
+                </p>
+              )}
+            </>
+          ) : null}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={publishing}
+              onClick={() => setPublishAccessOpen(false)}
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={publishing}
+            >
+              {publishing ? "Publication…" : "Confirmer et publier"}
+            </button>
+          </div>
+          {notice ? (
+            <p role="alert" className="text-sm text-[var(--danger)]">
+              {notice}
+            </p>
+          ) : null}
         </form>
       </Dialog>
     </div>

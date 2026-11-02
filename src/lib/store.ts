@@ -180,6 +180,8 @@ function newSpaceFields(
   const versionGroupId = partial.versionGroupId ?? `vg_${partial.id}`;
   return {
     description: "",
+    accessMode: "public",
+    allowedEmails: [],
     isPublic: false,
     accentColor: "#1F425B",
     accessPassword: null,
@@ -276,6 +278,7 @@ export async function updateSpace(
       Space,
       | "name"
       | "description"
+      | "accessMode"
       | "isPublic"
       | "accentColor"
       | "accessPassword"
@@ -293,15 +296,55 @@ export async function updateSpace(
     if (!space) return undefined;
     migrateStore(data);
     patch = spacePatchSchema.parse(patch);
+    const nextAccessPassword =
+      patch.accessPassword === undefined || patch.accessPassword === SECRET_MASK
+        ? space.accessPassword
+        : patch.accessPassword;
+    if (!patch.accessMode && patch.accessPassword) {
+      patch.accessMode = "password";
+    } else if (!patch.accessMode && patch.isPublic === true) {
+      patch.accessMode = nextAccessPassword ? "password" : "public";
+    }
     if (patch.accessPassword === SECRET_MASK) delete patch.accessPassword;
     else if (patch.accessPassword)
       patch.accessPassword = hashPassword(patch.accessPassword);
     if (patch.llm)
       patch.llm = mergeSecrets(space.llm ?? data.organization.llm, patch.llm);
     Object.assign(space, patch);
+    if (patch.accessMode) space.isPublic = patch.accessMode === "public";
     if (patch.defaultLocale && !space.locales.includes(patch.defaultLocale)) {
       space.locales = [...space.locales, patch.defaultLocale];
     }
+    await persist(data);
+    return structuredClone(space);
+  });
+}
+
+export async function updateSpaceAllowedEmail(
+  id: string,
+  email: string,
+  allowed: boolean,
+): Promise<Space | undefined> {
+  return enqueue(async (data) => {
+    const space = data.spaces.find((candidate) => candidate.id === id);
+    if (!space) return undefined;
+    migrateStore(data);
+    const normalized = email.trim().toLowerCase();
+    if (allowed && space.accessMode !== "magic_link")
+      throw new Error(
+        "Choisissez d’abord le mode « lien magique » dans les réglages de cet espace.",
+      );
+    if (
+      allowed &&
+      !space.allowedEmails.includes(normalized) &&
+      space.allowedEmails.length >= 500
+    )
+      throw new Error(
+        "Un espace ne peut pas contenir plus de 500 invitations.",
+      );
+    space.allowedEmails = allowed
+      ? [...new Set([...space.allowedEmails, normalized])]
+      : space.allowedEmails.filter((entry) => entry !== normalized);
     await persist(data);
     return structuredClone(space);
   });
@@ -813,14 +856,31 @@ export async function createTranslation(
 export async function publishSpace(
   spaceId: string,
   portalBaseUrl?: string,
+  access?: { accessMode?: Space["accessMode"]; accessPassword?: string | null },
 ): Promise<Space | undefined> {
   return enqueue(async (data) => {
     migrateStore(data);
     const space = data.spaces.find((s) => s.id === spaceId);
     if (!space) return undefined;
+    if (access?.accessMode) space.accessMode = access.accessMode;
+    if (access && access.accessPassword !== undefined) {
+      if (access?.accessPassword === SECRET_MASK) {
+        // Preserve the existing hash when the client kept the masked value.
+      } else if (access?.accessPassword) {
+        space.accessPassword = hashPassword(access.accessPassword);
+      } else {
+        space.accessPassword = null;
+      }
+    }
     const docs = data.documents.filter((d) => d.spaceId === spaceId);
     const publishedAt = new Date().toISOString();
-    space.isPublic = true;
+    if (space.accessMode === "password" && !space.accessPassword)
+      throw new Error("Définissez un code d’accès avant de publier.");
+    if (space.accessMode === "magic_link" && !space.allowedEmails.length)
+      throw new Error(
+        "Invitez au moins une personne avant de publier avec un lien magique.",
+      );
+    space.isPublic = space.accessMode === "public";
     space.publishedAt = publishedAt;
     space.publishedSnapshot = {
       publishedAt,

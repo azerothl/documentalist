@@ -24,8 +24,8 @@ export const POST = secureRoute(
       );
     const space = await getSpace(slug);
     if (
-      !space?.isPublic ||
-      !space.publishedSnapshot ||
+      !space?.publishedSnapshot ||
+      space.accessMode !== "password" ||
       !space.accessPassword ||
       !verifyPassword(password, space.accessPassword)
     )
