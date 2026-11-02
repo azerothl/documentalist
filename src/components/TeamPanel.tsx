@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { McpConnections } from "./McpConnections";
 type TeamData = {
   spaces: { id: string; name: string }[];
   users: {
@@ -328,6 +329,9 @@ export function TeamPanel({ admin }: { admin: boolean }) {
                 Inviter un compte par e-mail
               </button>
             </form>
+          </section>
+          <section>
+            <McpConnections users={data?.users ?? []} spaces={data?.spaces ?? []} />
           </section>
           <section>
             <h2 className="mb-3 text-xl">Sauvegardes</h2>

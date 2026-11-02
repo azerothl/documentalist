@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "documentalist-http-"));
@@ -332,6 +334,58 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
         );
       },
     );
+    await t.test("MCP : protocole, publications et permissions révocables", async () => {
+      const publicSpace = (await json("/api/spaces", "POST", { name: "MCP public" })).space;
+      const privateSpace = (await json("/api/spaces", "POST", { name: "MCP private" })).space;
+      const content = (text: string) => ({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
+      await json("/api/documents", "POST", { spaceId: publicSpace.id, title: "Public MCP page", content: content("PUBLIC_MCP_CONTENT") });
+      const published = (await json("/api/documents", "POST", { spaceId: privateSpace.id, title: "Private MCP page", content: content("PRIVATE_PUBLISHED_MCP_CONTENT") })).document;
+      const hidden = (await json("/api/documents", "POST", { spaceId: privateSpace.id, title: "Hidden MCP", content: content("HIDDEN_MCP_CONTENT") })).document;
+      await json(`/api/documents/${hidden.id}`, "PATCH", { hidden: true });
+      const child = (await json("/api/documents", "POST", { spaceId: privateSpace.id, parentId: hidden.id, title: "Hidden child", content: content("HIDDEN_CHILD_MCP_CONTENT") })).document;
+      await json(`/api/spaces/${publicSpace.id}/publish`, "POST", { accessMode: "public" });
+      await json(`/api/spaces/${privateSpace.id}/publish`, "POST", { accessMode: "password", accessPassword: "private-mcp-test-code" });
+      await json(`/api/documents/${published.id}`, "PATCH", { content: content("UNPUBLISHED_MCP_DRAFT") });
+      const member = (await json("/api/admin/team", "POST", { email: "mcp-reader@example.org", name: "MCP reader", role: "viewer", password: "long-mcp-reader-password", spaceScope: "selected", spaceIds: [privateSpace.id] })).user;
+      assert.equal((await request("/api/mcp/connections", "POST", { name: "Invalid scope", userId: member.id, spaceIds: [publicSpace.id] })).status, 400);
+      const connection = await json("/api/mcp/connections", "POST", { name: "Test agent", userId: member.id, spaceIds: [privateSpace.id], days: 1 });
+      const list = await json("/api/mcp/connections");
+      assert.ok(!JSON.stringify(list).includes(connection.accessKey));
+      assert.ok(!JSON.stringify(list).includes("key_hash"));
+      const publicClient = new Client({ name: "anonymous-test", version: "1" });
+      const privateClient = new Client({ name: "private-test", version: "1" });
+      try {
+        await publicClient.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp")));
+        await privateClient.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), { requestInit: { headers: { Authorization: `Bearer ${connection.accessKey}` } } }));
+        assert.deepEqual((await privateClient.listTools()).tools.map((tool) => tool.name).sort(), ["list_pages", "list_spaces", "read_page", "search_docs"]);
+        const publicList = JSON.stringify(await publicClient.callTool({ name: "list_spaces", arguments: {} }));
+        assert.ok(publicList.includes(publicSpace.id));
+        assert.ok(!publicList.includes(privateSpace.id));
+        assert.equal((await publicClient.callTool({ name: "read_page", arguments: { spaceId: privateSpace.id, documentId: published.id } })).isError, true);
+        const privateList = JSON.stringify(await privateClient.callTool({ name: "list_spaces", arguments: {} }));
+        assert.ok(privateList.includes(privateSpace.id));
+        assert.ok(!privateList.includes(publicSpace.id));
+        const read = JSON.stringify(await privateClient.callTool({ name: "read_page", arguments: { spaceId: privateSpace.id, documentId: published.id } }));
+        assert.ok(read.includes("PRIVATE_PUBLISHED_MCP_CONTENT"));
+        assert.ok(read.includes("?lang="));
+        assert.ok(!read.includes("UNPUBLISHED_MCP_DRAFT"));
+        const pages = JSON.stringify(await privateClient.callTool({ name: "list_pages", arguments: { spaceId: privateSpace.id, locale: "en", limit: 100 } }));
+        assert.ok(!pages.includes(hidden.id));
+        assert.ok(!pages.includes(child.id));
+        for (const id of [hidden.id, child.id]) assert.equal((await privateClient.callTool({ name: "read_page", arguments: { spaceId: privateSpace.id, documentId: id } })).isError, true);
+        assert.ok(JSON.stringify(await privateClient.callTool({ name: "search_docs", arguments: { query: "PRIVATE_PUBLISHED_MCP_CONTENT" } })).includes(published.id));
+        assert.ok(!JSON.stringify(await privateClient.callTool({ name: "search_docs", arguments: { query: "UNPUBLISHED_MCP_DRAFT" } })).includes(published.id));
+        await json("/api/admin/team", "PATCH", { id: member.id, spaceScope: "selected", spaceIds: [publicSpace.id] });
+        assert.ok(!JSON.stringify(await privateClient.callTool({ name: "list_spaces", arguments: {} })).includes(privateSpace.id));
+        await json("/api/admin/team", "PATCH", { id: member.id, disabled: true });
+        const authRequest = () => fetch(origin + "/mcp", { method: "POST", headers: { Authorization: `Bearer ${connection.accessKey}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+        assert.equal((await authRequest()).status, 401);
+        await json("/api/admin/team", "PATCH", { id: member.id, disabled: false });
+        await json("/api/mcp/connections", "DELETE", { id: connection.id });
+        assert.equal((await authRequest()).status, 401);
+        assert.equal((await fetch(origin + "/mcp", { method: "POST", headers: { Origin: "https://attacker.example", "Content-Type": "application/json" }, body: "{}" })).status, 403);
+      } finally { await Promise.allSettled([publicClient.close(), privateClient.close()]); }
+    });
     await t.test(
       "sauvegarde téléchargeable et journal d’activité",
       async () => {

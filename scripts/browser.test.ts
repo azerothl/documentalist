@@ -663,6 +663,23 @@ test(
           );
         },
       );
+      await t.test("MCP : création, affichage unique et révocation depuis l’équipe", async () => {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.goto(origin + "/team");
+        await page.getByLabel("Nom de la connexion").fill("Agent navigateur");
+        await page.getByLabel("Compte associé").selectOption({ label: "Administrateur de test (browser@example.org)" });
+        await page.getByRole("group", { name: "Espaces autorisés" }).getByRole("checkbox").first().check();
+        await page.getByRole("button", { name: "Créer une clé de lecture" }).click();
+        const configuration = page.getByLabel("Configuration du client MCP");
+        await configuration.waitFor();
+        assert.match(await configuration.inputValue(), /Bearer doc_mcp_/);
+        await page.reload();
+        await page.getByRole("button", { name: "Révoquer Agent navigateur" }).waitFor();
+        assert.equal(await page.getByLabel("Configuration du client MCP").count(), 0);
+        await page.getByRole("button", { name: "Révoquer Agent navigateur" }).click();
+        await page.getByText("Révoquée", { exact: false }).waitFor();
+        assert.equal(await page.getByRole("button", { name: "Révoquer Agent navigateur" }).count(), 0);
+      });
       await t.test(
         "compte lecteur : recherche, navigation et liens directs sans éditeur",
         async () => {

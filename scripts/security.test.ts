@@ -184,6 +184,18 @@ test("Sécurité, publication et persistance", async (t) => {
       assert.ok(login("admin@example.org", "long-password-123"));
       assert.equal(login("admin@example.org", "wrong"), null);
     });
+    await t.test("clés MCP : empreinte, expiration et portée effective", async () => {
+      const { createMcpConnection, authenticateMcp } = await import("../src/lib/mcp-access");
+      const member = createUser({ email: "mcp-unit@example.org", name: "MCP test", role: "viewer", password: "long-mcp-unit-password", spaceScope: "selected", spaceIds: ["allowed"] });
+      const connection = createMcpConnection(member.id, "Unit agent", ["allowed", "forbidden"], 1);
+      assert.deepEqual(authenticateMcp(connection.accessKey)?.spaceIds, ["allowed"]);
+      const stored = database().prepare("SELECT key_hash FROM mcp_connections WHERE id=?").get(connection.id) as { key_hash: string };
+      assert.notEqual(stored.key_hash, connection.accessKey);
+      assert.match(stored.key_hash, /^[a-f0-9]{64}$/);
+      assert.equal(authenticateMcp(connection.accessKey + "incorrect"), null);
+      database().prepare("UPDATE mcp_connections SET expires_at=? WHERE id=?").run(Date.now() - 1, connection.id);
+      assert.equal(authenticateMcp(connection.accessKey), null);
+    });
     await t.test(
       "blocage des destinations internes et des protocoles dangereux",
       async () => {
