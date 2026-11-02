@@ -1,0 +1,48 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: documentalist-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to the Dedibox
+    if: ${{ vars.DOCUMENTALIST_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Configure pinned SSH access
+        shell: bash
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DOCUMENTALIST_DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DOCUMENTALIST_DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/documentalist-deploy"
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/documentalist-deploy" "$HOME/.ssh/known_hosts"
+
+      - name: Deploy the current main commit
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DOCUMENTALIST_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DOCUMENTALIST_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -F /dev/null \
+            -i "$HOME/.ssh/documentalist-deploy" \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ServerAliveInterval=20 \
+            "$DEPLOY_USER@$DEPLOY_HOST"

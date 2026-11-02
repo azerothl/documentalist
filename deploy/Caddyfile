@@ -1,0 +1,5 @@
+# Add this site block to the existing /etc/caddy/Caddyfile.
+documentalist.akasha-labs.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3035
+}

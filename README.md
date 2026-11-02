@@ -25,6 +25,52 @@ npm run build
 npm start
 ```
 
+## Déployer sur la Dedibox
+
+Documentalist peut partager le serveur d’Agent Arena. L’application tourne dans son propre conteneur, écoute uniquement sur `127.0.0.1:3035` et conserve ses données dans `/data/documentalist`. Caddy termine HTTPS pour `documentalist.akasha-labs.com`; son bloc est ajouté à la configuration existante sans remplacer celui d’Agent Arena.
+
+Avant l’installation, faire pointer l’enregistrement DNS A `documentalist.akasha-labs.com` vers `62.210.65.167`. Le serveur doit déjà avoir Docker Compose, Caddy, le compte `azerothl` et le compte de déploiement `agent-deploy` utilisés par Agent Arena.
+
+### Préparer l’accès GitHub en lecture seule
+
+Sur le serveur, sous `azerothl`, créer une clé distincte qui permet uniquement de lire le dépôt privé :
+
+```sh
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+ssh-keygen -t ed25519 -C documentalist-dedibox-readonly -f ~/.ssh/documentalist-readonly -N ''
+```
+
+Ajouter le contenu de `~/.ssh/documentalist-readonly.pub` dans GitHub → Documentalist → Settings → Deploy keys, sans cocher l’accès en écriture. Le fichier `/home/azerothl/.ssh/github_known_hosts` doit déjà contenir la clé d’hôte GitHub vérifiée, comme pour Agent Arena.
+
+Cloner le dépôt et configurer sa clé :
+
+```sh
+GIT_SSH_COMMAND='ssh -i /home/azerothl/.ssh/documentalist-readonly -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/azerothl/.ssh/github_known_hosts' \
+  git clone git@github.com:azerothl/documentalist.git /home/azerothl/documentalist
+git -C /home/azerothl/documentalist config core.sshCommand \
+  'ssh -i /home/azerothl/.ssh/documentalist-readonly -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/azerothl/.ssh/github_known_hosts'
+```
+
+Depuis le clone, lancer une fois le bootstrap :
+
+```sh
+cd /home/azerothl/documentalist
+sudo bash scripts/bootstrap-production-server.sh
+```
+
+Le bootstrap ajoute un bloc Caddy, prépare `/etc/documentalist/production.env` et `/data/documentalist`, installe une commande distante SSH limitée au déploiement de Documentalist, puis démarre l’application. Il préserve le bloc Caddy d’Agent Arena. Les données et la clé de chiffrement restent sur le volume hôte et ne sont pas remplacées lors des mises à jour.
+
+Le code d’installation du premier compte administrateur est créé dans `/data/documentalist/setup-token`. Ouvrir `https://documentalist.akasha-labs.com/setup` et utiliser ce code. Le retirer après la création du compte. Conserver des sauvegardes de `/data/documentalist`, notamment de `encryption.key` avec la base SQLite.
+
+### Mises à jour automatiques
+
+Le workflow `.github/workflows/deploy-production.yml` se déclenche après chaque push sur `main`. Il se connecte à la Dedibox avec une clé Actions dédiée, puis le serveur récupère `main`, reconstruit l’image et remplace le conteneur après une compilation réussie.
+
+Le workflow reste inactif tant que la variable Actions `DOCUMENTALIST_DEPLOY_ENABLED` n’est pas égale à `true`. Une fois le bootstrap terminé, définir cette variable à `true` et lancer le workflow manuellement pour le premier déploiement ; les pushes suivants sur `main` déploient automatiquement.
+
+Le dépôt utilise ces secrets Actions : `DOCUMENTALIST_DEPLOY_HOST`, `DOCUMENTALIST_DEPLOY_USER`, `DOCUMENTALIST_DEPLOY_SSH_PRIVATE_KEY` et `DOCUMENTALIST_DEPLOY_SSH_KNOWN_HOSTS`. Le bootstrap installe la clé publique correspondante dans le compte `agent-deploy`; la clé privée doit rester dans le secret GitHub. La valeur de `DOCUMENTALIST_DEPLOY_SSH_KNOWN_HOSTS` doit contenir la clé SSH de la Dedibox vérifiée, avec l’adresse IP utilisée par `DOCUMENTALIST_DEPLOY_HOST`.
+
 La compilation utilise webpack et un correctif ciblé pour les volumes Windows qui renvoient une erreur incorrecte pour `readlink`. Le correctif est inactif sur les autres systèmes.
 
 ## Fonctions disponibles

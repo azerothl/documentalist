@@ -1,0 +1,39 @@
+services:
+  documentalist:
+    image: documentalist:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    env_file:
+      - /etc/documentalist/production.env
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      DOCUMENTALIST_DATA_DIR: /srv/data
+    ports:
+      - "127.0.0.1:3035:3000"
+    volumes:
+      - /data/documentalist:/srv/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
