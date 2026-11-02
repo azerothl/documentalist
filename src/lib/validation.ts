@@ -43,13 +43,20 @@ export const spaceImportSourceSchema = z.object({
   repository: z.string().max(300),
   branch: z.string().min(1).max(200),
   path: z.string().max(500),
+  learnPath: z.string().max(500).optional(),
+  blogPath: z.string().max(500).optional(),
   rootPageId: z.string().max(100).optional(),
   format: z
     .enum(["auto", "commonmark", "gfm", "mdx", "obsidian"])
     .default("auto"),
   locale: locale.default("en"),
   autoSync: z.boolean(),
-  syncIntervalMinutes: z.number().int().min(5).max(24 * 60).default(60),
+  syncIntervalMinutes: z
+    .number()
+    .int()
+    .min(5)
+    .max(24 * 60)
+    .default(60),
   lastSyncAt: z.string().nullable(),
   lastSyncError: z.string().nullable(),
 });
@@ -87,6 +94,12 @@ export const documentPatchSchema = z.object({
   locale: locale.optional(),
   translationOf: z.string().nullable().optional(),
   sourcePath: z.string().nullable().optional(),
+  section: z.enum(["learn", "reference", "blog"]).optional(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   markdownFormat: z
     .enum(["auto", "commonmark", "gfm", "mdx", "obsidian"])
     .nullable()

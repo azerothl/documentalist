@@ -23,15 +23,17 @@ test("les accents personnalisés restent lisibles dans les trois thèmes", () =>
       "#0000ff",
       "#0f6e56",
       "#185fa5",
+      "#1f425b",
+      "#c76a55",
       "invalid",
     ]) {
       const colors = accentStyle(brand, theme) as Record<string, string>;
       const surfaces =
         theme === "dark"
-          ? ["#181a1b", "#222526"]
+          ? ["#0d2432", "#12283a"]
           : theme === "contrast"
             ? ["#ffffff"]
-            : ["#f6f3ee", "#fffdf9"];
+            : ["#ffffff", "#f8f9fb"];
       for (const bg of [...surfaces, colors["--accent-soft"]]) {
         assert.ok(
           contrastRatio(colors["--accent"], bg) >= 4.5,

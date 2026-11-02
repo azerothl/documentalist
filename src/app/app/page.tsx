@@ -4,14 +4,19 @@ import { listSpaces, getWorkspacePayload } from "@/lib/store";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { PortalView } from "@/components/PortalView";
-import { pathSlugs } from "@/lib/tree";
+import { isSection } from "@/lib/sections";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppPage({
   searchParams,
 }: {
-  searchParams: Promise<{ space?: string; doc?: string; lang?: string }>;
+  searchParams: Promise<{
+    space?: string;
+    doc?: string;
+    lang?: string;
+    section?: string;
+  }>;
 }) {
   const query = await searchParams;
   const user = await requireUser();
@@ -44,7 +49,9 @@ export default async function AppPage({
             slug: s.slug,
             versionLabel: s.versionLabel,
           }))}
-        path={selected ? pathSlugs(payload.documents, selected.id) : []}
+        path={[]}
+        documentId={selected?.id}
+        section={isSection(query.section) ? query.section : undefined}
         locale={locale}
       />
     );
@@ -56,6 +63,7 @@ export default async function AppPage({
       account={{ name: user.name, role: user.role }}
       initialDocumentId={selected?.id}
       initialLocale={locale}
+      initialSection={isSection(query.section) ? query.section : undefined}
     />
   );
 }

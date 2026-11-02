@@ -1,5 +1,6 @@
 "use client";
 import { AppearanceSettings } from "@/components/Appearance";
+import { BrandLogo } from "@/components/BrandLogo";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -9,8 +10,11 @@ export function AuthForm({ setup = false }: { setup?: boolean }) {
   const router = useRouter();
   return (
     <div className="mx-auto w-full max-w-md">
+      <div className="mb-6 flex justify-center">
+        <BrandLogo height={44} priority />
+      </div>
       <form
-        className="mx-auto flex w-full max-w-md flex-col gap-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-6"
+        className="card mx-auto flex w-full max-w-md flex-col gap-4"
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -38,7 +42,7 @@ export function AuthForm({ setup = false }: { setup?: boolean }) {
           }
         }}
       >
-        <h1 className="font-[family-name:var(--font-display)] text-3xl">
+        <h1 className="text-3xl font-bold text-[var(--heading)]">
           {setup
             ? "Créer le compte administrateur"
             : "Connexion à Documentalist"}
@@ -79,10 +83,7 @@ export function AuthForm({ setup = false }: { setup?: boolean }) {
             {error}
           </p>
         )}
-        <button
-          disabled={busy}
-          className="rounded-md bg-[var(--accent)] px-4 py-2 text-[var(--on-accent)] disabled:opacity-50"
-        >
+        <button disabled={busy} className="primary-button mt-2 min-h-11">
           {busy
             ? "Veuillez patienter…"
             : setup
@@ -90,7 +91,7 @@ export function AuthForm({ setup = false }: { setup?: boolean }) {
               : "Se connecter"}
         </button>
       </form>
-      <div className="mt-4">
+      <div className="mt-4 flex justify-center">
         <AppearanceSettings />
       </div>
     </div>

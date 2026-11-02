@@ -1,10 +1,13 @@
 "use client";
 
+import { SunMoon } from "lucide-react";
 import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -61,6 +64,21 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
         ? "dark"
         : "light"
       : preferences.theme;
+  // Colors would otherwise fade through 150 ms transitions on every
+  // control when the theme changes; switch them instantly instead.
+  const previousTheme = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const html = document.documentElement;
+    const changed =
+      previousTheme.current !== null && previousTheme.current !== theme;
+    previousTheme.current = theme;
+    if (!changed) return;
+    html.dataset.themeSwitching = "true";
+    const timer = window.setTimeout(() => {
+      delete html.dataset.themeSwitching;
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [theme]);
   useEffect(() => {
     const current = parseAppearance(snapshot());
     const resolved =
@@ -96,19 +114,37 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
 
 export const useAppearance = () => useContext(AppearanceContext);
 
-export function AppearanceSettings() {
+export function AppearanceSettings({
+  variant = "button",
+}: {
+  /** "icon" renders a round icon button for compact site headers */
+  variant?: "button" | "icon";
+}) {
   const [open, setOpen] = useState(false);
   const { preferences, update } = useAppearance();
   return (
     <>
-      <button
-        type="button"
-        className="secondary-button"
-        onClick={() => setOpen(true)}
-        aria-haspopup="dialog"
-      >
-        Apparence et lecture
-      </button>
+      {variant === "icon" ? (
+        <button
+          type="button"
+          className="site-icon-button"
+          onClick={() => setOpen(true)}
+          aria-haspopup="dialog"
+          aria-label="Apparence et lecture"
+          title="Apparence et lecture"
+        >
+          <SunMoon size={20} aria-hidden="true" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => setOpen(true)}
+          aria-haspopup="dialog"
+        >
+          Apparence et lecture
+        </button>
+      )}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
@@ -125,8 +161,8 @@ export function AppearanceSettings() {
               }
             >
               <option value="system">Suivre le système</option>
-              <option value="light">Clair — Papier</option>
-              <option value="dark">Sombre — Graphite</option>
+              <option value="light">Clair</option>
+              <option value="dark">Sombre — Nuit</option>
               <option value="contrast">Contraste renforcé</option>
             </select>
           </label>

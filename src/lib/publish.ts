@@ -1,4 +1,4 @@
-import type { DocumentRecord, Space } from "./types";
+import { docSection, type DocumentRecord, type Space } from "./types";
 
 export function hasUnpublishedChanges(
   space: Space,
@@ -23,6 +23,8 @@ export function hasUnpublishedChanges(
       doc.hidden !== prev.hidden ||
       doc.parentId !== prev.parentId ||
       doc.position !== prev.position ||
+      docSection(doc) !== docSection(prev) ||
+      (doc.date ?? null) !== (prev.date ?? null) ||
       doc.seoTitle !== prev.seoTitle ||
       doc.seoDescription !== prev.seoDescription ||
       JSON.stringify(doc.tags ?? []) !== JSON.stringify(prev.tags ?? []) ||

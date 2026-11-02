@@ -16,6 +16,7 @@ import { parseMarkdown, repairTipTapDoc } from "./markdown";
 import { migrateStore } from "./migrate";
 import { gitlabFiles, notionFiles } from "./remote-imports";
 import { createSeedStore } from "./seed";
+import { blogDate, cleanRoot, ownsFile } from "./sections";
 import { uniqueSlug, slugify } from "./slug";
 import { emptyDoc } from "./tiptap-text";
 import { database, encrypt, decrypt, dataDirectory } from "./database";
@@ -26,8 +27,10 @@ import {
   documentPatchSchema,
   validateDocumentTree,
 } from "./validation";
+import { docSection } from "./types";
 import type {
   Comment,
+  DocSection,
   DocumentKind,
   DocumentRecord,
   Integration,
@@ -139,7 +142,7 @@ function newSpaceFields(
   return {
     description: "",
     isPublic: false,
-    accentColor: "#0F6E56",
+    accentColor: "#1F425B",
     accessPassword: null,
     customCss: "",
     versionGroupId,
@@ -325,11 +328,18 @@ export async function createDocument(input: {
   tags?: string[];
   seoTitle?: string | null;
   seoDescription?: string | null;
+  section?: DocSection;
 }): Promise<DocumentRecord> {
   return enqueue(async (data) => {
     migrateStore(data);
     const space = data.spaces.find((s) => s.id === input.spaceId);
     const locale = input.locale ?? space?.defaultLocale ?? "en";
+    const parent = input.parentId
+      ? data.documents.find((d) => d.id === input.parentId)
+      : undefined;
+    const section = parent
+      ? docSection(parent)
+      : (input.section ?? "reference");
     const siblings = data.documents.filter(
       (d) =>
         d.spaceId === input.spaceId &&
@@ -356,6 +366,8 @@ export async function createDocument(input: {
       locale,
       translationOf: input.translationOf ?? null,
       sourcePath: input.sourcePath ?? null,
+      section,
+      date: section === "blog" ? new Date().toISOString().slice(0, 10) : null,
       markdownFormat: input.markdownFormat ?? null,
       seoTitle: input.seoTitle ?? null,
       seoDescription: input.seoDescription ?? null,
@@ -385,6 +397,8 @@ export async function updateDocument(
       | "locale"
       | "translationOf"
       | "sourcePath"
+      | "section"
+      | "date"
       | "markdownFormat"
       | "seoTitle"
       | "seoDescription"
@@ -421,8 +435,20 @@ export async function updateDocument(
       data.revisions = [...mine, ...others];
     }
 
+    const previousSection = docSection(doc);
     Object.assign(doc, patch);
     if (!Array.isArray(doc.tags)) doc.tags = [];
+    if (patch.parentId !== undefined && doc.parentId) {
+      const parent = data.documents.find((d) => d.id === doc.parentId);
+      if (parent) setSection(data, doc.id, docSection(parent));
+    } else if (patch.section && patch.section !== previousSection) {
+      // Moving a page to another tab takes its subtree along.
+      const parent = doc.parentId
+        ? data.documents.find((d) => d.id === doc.parentId)
+        : undefined;
+      if (parent && docSection(parent) !== patch.section) doc.parentId = null;
+      setSection(data, doc.id, patch.section);
+    }
     doc.updatedAt = new Date(
       Math.max(Date.now(), Date.parse(doc.updatedAt) + 1),
     ).toISOString();
@@ -446,10 +472,29 @@ export async function reorderDocuments(
       doc.parentId = parentId;
       doc.position = index;
       doc.updatedAt = new Date().toISOString();
+      const parent = parentId
+        ? data.documents.find((d) => d.id === parentId)
+        : undefined;
+      if (parent) setSection(data, doc.id, docSection(parent));
     });
     await persist(data);
     return structuredClone(data.documents.filter((d) => d.spaceId === spaceId));
   });
+}
+
+/** Assign a tab to a document and all of its descendants. */
+function setSection(data: StoreData, id: string, section: DocSection) {
+  const stack = [id];
+  const seen = new Set<string>();
+  while (stack.length) {
+    const current = stack.pop()!;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    for (const d of data.documents) {
+      if (d.id === current) d.section = section;
+      else if (d.parentId === current) stack.push(d.id);
+    }
+  }
 }
 
 export async function deleteDocument(id: string): Promise<boolean> {
@@ -790,6 +835,8 @@ function buildImportSource(input: {
   repository: string;
   branch?: string;
   path?: string;
+  learnPath?: string;
+  blogPath?: string;
   rootPageId?: string;
   format?: MarkdownFormat;
   locale?: string;
@@ -801,6 +848,8 @@ function buildImportSource(input: {
     repository: input.repository,
     branch: input.branch?.trim() || "main",
     path: (input.path ?? "docs").replace(/^\/+|\/+$/g, ""),
+    learnPath: cleanRoot(input.learnPath),
+    blogPath: cleanRoot(input.blogPath),
     rootPageId: input.rootPageId,
     format: input.format ?? "auto",
     locale: input.locale ?? "en",
@@ -814,10 +863,21 @@ function buildImportSource(input: {
   };
 }
 
+/** Files fetched from one repository folder, destined for one portal tab. */
+export type ImportPart = {
+  section: DocSection;
+  root: string;
+  files: { path: string; content: string }[];
+};
+
 export async function importGithubRepo(input: {
   repository: string;
   branch?: string;
   path?: string;
+  /** Folder feeding the Learn tab (empty = none) */
+  learnPath?: string;
+  /** Folder feeding the Blog tab (empty = none) */
+  blogPath?: string;
   token?: string | null;
   spaceName?: string;
   format?: MarkdownFormat;
@@ -832,12 +892,40 @@ export async function importGithubRepo(input: {
     failed: string[];
   }
 > {
-  const github = await fetchGithubMarkdownFiles({
-    repository: input.repository,
-    branch: input.branch,
-    path: input.path,
-    token: input.token,
-  });
+  const roots: { section: DocSection; root: string }[] = [
+    { section: "reference", root: cleanRoot(input.path ?? "docs") },
+  ];
+  const learnRoot = cleanRoot(input.learnPath);
+  const blogRoot = cleanRoot(input.blogPath);
+  if (learnRoot) roots.push({ section: "learn", root: learnRoot });
+  if (blogRoot) roots.push({ section: "blog", root: blogRoot });
+  if (new Set(roots.map((r) => r.root)).size !== roots.length) {
+    throw new Error(
+      "Les dossiers docs, Learn et Blog doivent être différents.",
+    );
+  }
+
+  const fetched = [];
+  for (const entry of roots) {
+    fetched.push({
+      ...entry,
+      result: await fetchGithubMarkdownFiles({
+        repository: input.repository,
+        branch: input.branch,
+        path: entry.root,
+        token: input.token,
+      }),
+    });
+  }
+  const github = fetched[0].result;
+  const allRoots = roots.map((r) => r.root);
+  const parts: ImportPart[] = fetched.map((f) => ({
+    section: f.section,
+    root: f.root,
+    files: f.result.files.filter((file) =>
+      ownsFile(file.path, f.root, allRoots),
+    ),
+  }));
 
   const result = await importRepositoryFiles(
     {
@@ -847,20 +935,23 @@ export async function importGithubRepo(input: {
       autoSync: input.autoSync,
       syncIntervalMinutes: input.syncIntervalMinutes,
       spaceId: input.spaceId,
+      parts,
     },
     github,
   );
   return {
     ...result,
-    matched: github.matched,
-    truncated: github.truncated,
-    failed: github.failed,
+    matched: fetched.reduce((n, f) => n + f.result.matched, 0),
+    truncated: fetched.some((f) => f.result.truncated),
+    failed: fetched.flatMap((f) => f.result.failed),
   };
 }
 
 export async function importRepositoryFiles(
   input: {
     path?: string;
+    learnPath?: string;
+    blogPath?: string;
     spaceName?: string;
     locale?: string;
     format?: MarkdownFormat;
@@ -872,6 +963,8 @@ export async function importRepositoryFiles(
     syncIntervalMinutes?: number;
     /** When set, upsert into this Space instead of creating a new one */
     spaceId?: string;
+    /** One entry per tab; defaults to `github.files` feeding Reference */
+    parts?: ImportPart[];
   },
   github: {
     owner: string;
@@ -886,7 +979,10 @@ export async function importRepositoryFiles(
   return enqueue(async (data) => {
     migrateStore(data);
     const locale = input.locale ?? "en";
-    const rootPrefix = (input.path ?? "docs").replace(/^\/+|\/+$/g, "");
+    const referenceRoot = (input.path ?? "docs").replace(/^\/+|\/+$/g, "");
+    const parts: ImportPart[] = input.parts ?? [
+      { section: "reference", root: referenceRoot, files: github.files },
+    ];
     const repository =
       input.repository?.trim() || `${github.owner}/${github.repo}`;
     const provider = (
@@ -898,7 +994,8 @@ export async function importRepositoryFiles(
     let space: Space;
     if (input.spaceId) {
       const existing = data.spaces.find((s) => s.id === input.spaceId);
-      if (!existing) throw new Error("Espace introuvable pour la synchronisation.");
+      if (!existing)
+        throw new Error("Espace introuvable pour la synchronisation.");
       space = existing;
     } else {
       const id = `spc_${nanoid(8)}`;
@@ -923,7 +1020,9 @@ export async function importRepositoryFiles(
       provider,
       repository,
       branch: input.branch || github.branch,
-      path: rootPrefix,
+      path: referenceRoot,
+      learnPath: parts.find((p) => p.section === "learn")?.root,
+      blogPath: parts.find((p) => p.section === "blog")?.root,
       rootPageId: input.rootPageId,
       format: input.format,
       locale,
@@ -950,205 +1049,228 @@ export async function importRepositoryFiles(
     let imported = 0;
     let updated = 0;
     let skipped = 0;
-    const seenPaths = new Set<string>();
-    const orderByPath = new Map<string, ImportOrderEntry>();
-    const frontmatterByPath = new Map<string, Record<string, string>>();
-    const parsedFiles: {
-      path: string;
-      content: string;
-      parsed: ReturnType<typeof parseMarkdown>;
-    }[] = [];
+    let removed = 0;
 
-    for (const file of github.files) {
-      try {
-        const parsed = parseMarkdown(file.content, input.format ?? "auto");
-        frontmatterByPath.set(file.path, parsed.frontmatter);
-        parsedFiles.push({ path: file.path, content: file.content, parsed });
-      } catch {
-        skipped += 1;
-      }
-    }
+    for (const part of parts) {
+      const rootPrefix = part.root;
+      const section = part.section;
+      // Release notes are a flat, dated list: no folder hierarchy.
+      const flat = section === "blog";
+      const seenPaths = new Set<string>();
+      const orderByPath = new Map<string, ImportOrderEntry>();
+      const frontmatterByPath = new Map<string, Record<string, string>>();
+      const parsedFiles: {
+        path: string;
+        content: string;
+        parsed: ReturnType<typeof parseMarkdown>;
+      }[] = [];
 
-    const orderedFiles = sortImportFiles(
-      parsedFiles.map((f) => ({ path: f.path, content: f.content })),
-      rootPrefix,
-      frontmatterByPath,
-    );
-    const parsedByPath = new Map(parsedFiles.map((f) => [f.path, f.parsed]));
-    const linkOrder = buildLinkOrderMap(orderedFiles, rootPrefix);
-    for (const file of orderedFiles) {
-      const base = file.path.split("/").pop() || file.path;
-      orderByPath.set(file.path, {
-        path: file.path,
-        linkIndex: linkOrder.has(file.path) ? linkOrder.get(file.path)! : null,
-        frontmatterOrder: frontmatterOrder(
-          frontmatterByPath.get(file.path) ?? {},
-        ),
-        numericPrefix: numericPrefixOrder(base),
-      });
-    }
-
-    function ensureFolder(dirPath: string, parentId: string | null): string {
-      if (!dirPath || dirPath === ".") return parentId ?? "";
-      if (folderIds.has(dirPath)) return folderIds.get(dirPath)!;
-      const parentPath = dirPath.includes("/")
-        ? dirPath.slice(0, dirPath.lastIndexOf("/"))
-        : "";
-      const parent =
-        parentPath && parentPath !== rootPrefix
-          ? ensureFolder(parentPath, parentId)
-          : parentId;
-      const title = dirPath.split("/").pop() || dirPath;
-      const existing = data.documents.find(
-        (d) =>
-          d.spaceId === space.id &&
-          d.kind === "category" &&
-          d.sourcePath === dirPath &&
-          d.locale === locale,
-      );
-      if (existing) {
-        folderIds.set(dirPath, existing.id);
-        return existing.id;
-      }
-      const folderId = `doc_${nanoid(8)}`;
-      const siblings = data.documents.filter(
-        (d) =>
-          d.spaceId === space.id &&
-          d.parentId === (parent || null) &&
-          d.locale === locale,
-      );
-      data.documents.push({
-        id: folderId,
-        spaceId: space.id,
-        parentId: parent || null,
-        title,
-        slug: uniqueSlug(
-          title,
-          siblings.map((d) => d.slug),
-        ),
-        kind: "category",
-        href: null,
-        content: emptyDoc(),
-        position: siblings.length,
-        hidden: false,
-        tags: [provider],
-        locale,
-        translationOf: null,
-        sourcePath: dirPath,
-        markdownFormat: null,
-        seoTitle: null,
-        seoDescription: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-      folderIds.set(dirPath, folderId);
-      return folderId;
-    }
-
-    for (const file of orderedFiles) {
-      try {
-        seenPaths.add(file.path);
-        const parsed = parsedByPath.get(file.path);
-        if (!parsed) {
+      for (const file of part.files) {
+        try {
+          const parsed = parseMarkdown(file.content, input.format ?? "auto");
+          frontmatterByPath.set(file.path, parsed.frontmatter);
+          parsedFiles.push({ path: file.path, content: file.content, parsed });
+        } catch {
           skipped += 1;
-          continue;
         }
+      }
+
+      const orderedFiles = sortImportFiles(
+        parsedFiles.map((f) => ({ path: f.path, content: f.content })),
+        rootPrefix,
+        frontmatterByPath,
+      );
+      const parsedByPath = new Map(parsedFiles.map((f) => [f.path, f.parsed]));
+      const linkOrder = buildLinkOrderMap(orderedFiles, rootPrefix);
+      for (const file of orderedFiles) {
         const base = file.path.split("/").pop() || file.path;
-        const title =
-          parsed.frontmatter.title ||
-          parsed.titleFromHeading ||
-          base.replace(/\.(md|mdx|markdown)$/i, "");
-        const dir = file.path.includes("/")
-          ? file.path.slice(0, file.path.lastIndexOf("/"))
+        orderByPath.set(file.path, {
+          path: file.path,
+          linkIndex: linkOrder.has(file.path)
+            ? linkOrder.get(file.path)!
+            : null,
+          frontmatterOrder: frontmatterOrder(
+            frontmatterByPath.get(file.path) ?? {},
+          ),
+          numericPrefix: numericPrefixOrder(base),
+        });
+      }
+
+      const ensureFolder = (
+        dirPath: string,
+        parentId: string | null,
+      ): string => {
+        if (!dirPath || dirPath === ".") return parentId ?? "";
+        if (folderIds.has(dirPath)) return folderIds.get(dirPath)!;
+        const parentPath = dirPath.includes("/")
+          ? dirPath.slice(0, dirPath.lastIndexOf("/"))
           : "";
-        const parentId =
-          dir && dir !== rootPrefix ? ensureFolder(dir, null) : null;
-        const tags = parsed.frontmatter.tags
-          ? parsed.frontmatter.tags.split(/[,\s]+/).filter(Boolean)
-          : [provider];
-        const content = repairTipTapDoc(parsed.doc);
+        const parent =
+          parentPath && parentPath !== rootPrefix
+            ? ensureFolder(parentPath, parentId)
+            : parentId;
+        const title = dirPath.split("/").pop() || dirPath;
         const existing = data.documents.find(
           (d) =>
             d.spaceId === space.id &&
-            d.kind === "page" &&
-            d.sourcePath === file.path &&
+            d.kind === "category" &&
+            d.sourcePath === dirPath &&
             d.locale === locale,
         );
         if (existing) {
-          existing.title = title;
-          existing.parentId = parentId;
-          existing.content = content;
-          existing.tags = tags;
-          existing.markdownFormat = parsed.format;
-          existing.seoTitle = parsed.frontmatter.title ?? existing.seoTitle;
-          existing.seoDescription =
-            parsed.frontmatter.description ||
-            parsed.frontmatter.summary ||
-            existing.seoDescription;
-          existing.updatedAt = new Date().toISOString();
-          updated += 1;
-          continue;
+          existing.section = section;
+          folderIds.set(dirPath, existing.id);
+          return existing.id;
         }
+        const folderId = `doc_${nanoid(8)}`;
         const siblings = data.documents.filter(
           (d) =>
             d.spaceId === space.id &&
-            d.parentId === parentId &&
+            d.parentId === (parent || null) &&
             d.locale === locale,
         );
         data.documents.push({
-          id: `doc_${nanoid(8)}`,
+          id: folderId,
           spaceId: space.id,
-          parentId,
+          parentId: parent || null,
           title,
           slug: uniqueSlug(
             title,
             siblings.map((d) => d.slug),
           ),
-          kind: "page",
+          kind: "category",
           href: null,
-          content,
+          content: emptyDoc(),
           position: siblings.length,
           hidden: false,
-          tags,
+          tags: [provider],
           locale,
           translationOf: null,
-          sourcePath: file.path,
-          markdownFormat: parsed.format,
-          seoTitle: parsed.frontmatter.title ?? null,
-          seoDescription:
-            parsed.frontmatter.description ||
-            parsed.frontmatter.summary ||
-            null,
+          sourcePath: dirPath,
+          section,
+          markdownFormat: null,
+          seoTitle: null,
+          seoDescription: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
-        imported += 1;
-      } catch {
-        skipped += 1;
-      }
-    }
+        folderIds.set(dirPath, folderId);
+        return folderId;
+      };
 
-    // Drop imported pages that disappeared remotely (keep local-only pages).
-    let removed = 0;
-    const pathPrefix = rootPrefix ? `${rootPrefix}/` : "";
-    data.documents = data.documents.filter((d) => {
-      if (d.spaceId !== space.id || d.locale !== locale) return true;
-      if (d.kind !== "page" || !d.sourcePath) return true;
-      if (rootPrefix && d.sourcePath !== rootPrefix && !d.sourcePath.startsWith(pathPrefix)) {
-        return true;
+      for (const file of orderedFiles) {
+        try {
+          seenPaths.add(file.path);
+          const parsed = parsedByPath.get(file.path);
+          if (!parsed) {
+            skipped += 1;
+            continue;
+          }
+          const base = file.path.split("/").pop() || file.path;
+          const title =
+            parsed.frontmatter.title ||
+            parsed.titleFromHeading ||
+            base.replace(/\.(md|mdx|markdown)$/i, "");
+          const dir = file.path.includes("/")
+            ? file.path.slice(0, file.path.lastIndexOf("/"))
+            : "";
+          const parentId =
+            !flat && dir && dir !== rootPrefix ? ensureFolder(dir, null) : null;
+          const tags = parsed.frontmatter.tags
+            ? parsed.frontmatter.tags.split(/[,\s]+/).filter(Boolean)
+            : [provider];
+          const content = repairTipTapDoc(parsed.doc);
+          const date = flat ? blogDate(file.path, parsed.frontmatter) : null;
+          const existing = data.documents.find(
+            (d) =>
+              d.spaceId === space.id &&
+              d.kind === "page" &&
+              d.sourcePath === file.path &&
+              d.locale === locale,
+          );
+          if (existing) {
+            existing.title = title;
+            existing.parentId = parentId;
+            existing.content = content;
+            existing.tags = tags;
+            existing.section = section;
+            existing.date = date;
+            existing.markdownFormat = parsed.format;
+            existing.seoTitle = parsed.frontmatter.title ?? existing.seoTitle;
+            existing.seoDescription =
+              parsed.frontmatter.description ||
+              parsed.frontmatter.summary ||
+              existing.seoDescription;
+            existing.updatedAt = new Date().toISOString();
+            updated += 1;
+            continue;
+          }
+          const siblings = data.documents.filter(
+            (d) =>
+              d.spaceId === space.id &&
+              d.parentId === parentId &&
+              d.locale === locale,
+          );
+          data.documents.push({
+            id: `doc_${nanoid(8)}`,
+            spaceId: space.id,
+            parentId,
+            title,
+            slug: uniqueSlug(
+              title,
+              siblings.map((d) => d.slug),
+            ),
+            kind: "page",
+            href: null,
+            content,
+            position: siblings.length,
+            hidden: false,
+            tags,
+            locale,
+            translationOf: null,
+            sourcePath: file.path,
+            section,
+            date,
+            markdownFormat: parsed.format,
+            seoTitle: parsed.frontmatter.title ?? null,
+            seoDescription:
+              parsed.frontmatter.description ||
+              parsed.frontmatter.summary ||
+              null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+          imported += 1;
+        } catch {
+          skipped += 1;
+        }
       }
-      if (seenPaths.has(d.sourcePath)) return true;
-      removed += 1;
-      return false;
-    });
 
-    // Reassign positions from import order within each parent group.
-    {
+      // Drop imported pages that disappeared remotely (keep local-only pages).
+      const pathPrefix = rootPrefix ? `${rootPrefix}/` : "";
+      data.documents = data.documents.filter((d) => {
+        if (d.spaceId !== space.id || d.locale !== locale) return true;
+        if (d.kind !== "page" || !d.sourcePath) return true;
+        if (docSection(d) !== section) return true;
+        if (
+          rootPrefix &&
+          d.sourcePath !== rootPrefix &&
+          !d.sourcePath.startsWith(pathPrefix)
+        ) {
+          return true;
+        }
+        if (seenPaths.has(d.sourcePath)) return true;
+        removed += 1;
+        return false;
+      });
+
+      // Reassign positions from import order within each parent group.
       const importedDocs = data.documents.filter(
         (d) =>
           d.spaceId === space.id &&
           d.locale === locale &&
           d.sourcePath &&
+          docSection(d) === section &&
           (d.kind === "page" || d.kind === "category"),
       );
       const minLinkByFolder = new Map<string, number>();
@@ -1174,6 +1296,12 @@ export async function importRepositoryFiles(
       }
       for (const siblings of groups.values()) {
         siblings.sort((a, b) => {
+          if (flat) {
+            // Newest release notes first, undated (intro) pages on top.
+            if (!a.date !== !b.date) return a.date ? 1 : -1;
+            if (a.date && b.date && a.date !== b.date)
+              return a.date < b.date ? 1 : -1;
+          }
           const entryA: ImportOrderEntry =
             a.kind === "category" && a.sourcePath
               ? {
@@ -1305,6 +1433,8 @@ export async function syncSpaceImport(
         repository: src.repository,
         branch: src.branch,
         path: src.path,
+        learnPath: src.learnPath,
+        blogPath: src.blogPath,
         token,
         format: src.format,
         locale: src.locale,

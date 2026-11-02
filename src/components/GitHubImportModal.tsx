@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useId, useState } from "react";
 import { Dialog } from "@/components/Dialog";
+import { InfoTip } from "@/components/InfoTip";
 import type { MarkdownFormat, Space } from "@/lib/types";
 
 type Props = {
@@ -30,6 +31,29 @@ const INTERVALS = [
   { minutes: 1440, label: "Une fois par jour" },
 ];
 
+/** Label + help bubble + input, with the tooltip kept outside the <label>. */
+function Field({
+  label,
+  help,
+  children,
+  id,
+}: {
+  label: string;
+  help?: React.ReactNode;
+  id: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="field-label">
+        <label htmlFor={id}>{label}</label>
+        {help ? <InfoTip label={`Aide : ${label}`}>{help}</InfoTip> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 export function GitHubImportModal({
   open,
   onClose,
@@ -38,9 +62,12 @@ export function GitHubImportModal({
   targetSpaceName,
   preferCurrentSpace = false,
 }: Props) {
+  const ids = useId();
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("main");
   const [path, setPath] = useState("docs");
+  const [learnPath, setLearnPath] = useState("");
+  const [blogPath, setBlogPath] = useState("");
   const [token, setToken] = useState("");
   const [format, setFormat] = useState<MarkdownFormat>("auto");
   const [locale, setLocale] = useState("en");
@@ -52,13 +79,22 @@ export function GitHubImportModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!open) return;
-    setIntoCurrent(Boolean(preferCurrentSpace && targetSpaceId));
-    setAutoSync(true);
-    setSyncIntervalMinutes(60);
-    setError("");
-  }, [open, preferCurrentSpace, targetSpaceId]);
+  // Each opening resets the per-import options; the repository fields are
+  // kept. Adjusted during render rather than in an effect (react.dev:
+  // "Adjusting some state when a prop changes").
+  const openKey = open
+    ? `${preferCurrentSpace}|${targetSpaceId ?? ""}`
+    : "closed";
+  const [lastOpenKey, setLastOpenKey] = useState(openKey);
+  if (openKey !== lastOpenKey) {
+    setLastOpenKey(openKey);
+    if (open) {
+      setIntoCurrent(Boolean(preferCurrentSpace && targetSpaceId));
+      setAutoSync(true);
+      setSyncIntervalMinutes(60);
+      setError("");
+    }
+  }
 
   if (!open) return null;
 
@@ -74,22 +110,22 @@ export function GitHubImportModal({
           repository,
           branch,
           path,
+          learnPath: learnPath.trim() || undefined,
+          blogPath: blogPath.trim() || undefined,
           token: token || undefined,
           format,
           locale,
           useSavedToken: true,
           autoSync,
           syncIntervalMinutes,
-          spaceId:
-            intoCurrent && targetSpaceId ? targetSpaceId : undefined,
+          spaceId: intoCurrent && targetSpaceId ? targetSpaceId : undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
       const imported = Number(data.imported ?? 0);
       const updated = Number(data.updated ?? 0);
-      const matched =
-        data.matched == null ? null : Number(data.matched);
+      const matched = data.matched == null ? null : Number(data.matched);
       const skipped = Number(data.skipped ?? 0);
       const failed = Array.isArray(data.failed) ? data.failed.length : 0;
       const notes: string[] = [];
@@ -116,46 +152,122 @@ export function GitHubImportModal({
   return (
     <Dialog open={open} onClose={onClose} title="Importer depuis GitHub">
       <form onSubmit={(e) => void submit(e)} className="w-full">
-        <p className="mt-1 text-sm text-[var(--ink-muted)]">
-          Importe les fichiers Markdown/MDX d’un dossier (récursif). La source
-          reste liée pour relancer ou synchroniser automatiquement.
+        <p className="-mt-2 text-sm text-[var(--ink-muted)]">
+          Importe les fichiers Markdown/MDX de chaque dossier (récursif). La
+          source reste liée pour relancer ou synchroniser automatiquement.
         </p>
-        <div className="mt-4 flex flex-col gap-3 text-sm">
-          <label>
-            Dépôt
+        <div className="mt-5 flex flex-col gap-4 text-sm">
+          <Field
+            id={`${ids}-repo`}
+            label="Dépôt"
+            help="Nom du dépôt GitHub au format owner/repo, ou son URL github.com."
+          >
             <input
+              id={`${ids}-repo`}
               required
               value={repository}
               onChange={(e) => setRepository(e.target.value)}
               placeholder="owner/repo"
-              className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+              className="field-input"
             />
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label>
-              Branche
+          </Field>
+          <Field id={`${ids}-branch`} label="Branche">
+            <input
+              id={`${ids}-branch`}
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              className="field-input"
+            />
+          </Field>
+
+          <fieldset className="field-group grid gap-4">
+            <legend>Dossiers et onglets du portail</legend>
+            <Field
+              id={`${ids}-docs`}
+              label="Dossier docs"
+              help={
+                <>
+                  Alimente l’onglet <strong>Reference</strong> : la
+                  documentation de référence (API, composants, options). Chemin
+                  depuis la racine du dépôt, par exemple <code>docs</code>.
+                </>
+              }
+            >
               <input
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
-              />
-            </label>
-            <label>
-              Dossier docs
-              <input
+                id={`${ids}-docs`}
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 placeholder="docs"
-                className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                aria-describedby={`${ids}-docs-hint`}
+                className="field-input"
               />
-            </label>
-          </div>
-          <label>
-            Format Markdown
+              <span id={`${ids}-docs-hint`} className="field-hint">
+                Onglet Reference
+              </span>
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                id={`${ids}-learn`}
+                label="Dossier Learn"
+                help={
+                  <>
+                    Alimente l’onglet <strong>Learn</strong> : guides pas à pas,
+                    tutoriels et parcours e-learning. Laissez vide pour ne pas
+                    créer cet onglet.
+                  </>
+                }
+              >
+                <input
+                  id={`${ids}-learn`}
+                  value={learnPath}
+                  onChange={(e) => setLearnPath(e.target.value)}
+                  placeholder="learn"
+                  aria-describedby={`${ids}-learn-hint`}
+                  className="field-input"
+                />
+                <span id={`${ids}-learn-hint`} className="field-hint">
+                  Facultatif · onglet Learn
+                </span>
+              </Field>
+              <Field
+                id={`${ids}-blog`}
+                label="Dossier Blog"
+                help={
+                  <>
+                    Alimente l’onglet <strong>Blog</strong> avec les notes de
+                    version : un fichier par version, classé du plus récent au
+                    plus ancien d’après le champ <code>date</code> du
+                    frontmatter ou une date dans le chemin (
+                    <code>2026/10/01</code>). Laissez vide pour ne pas créer cet
+                    onglet.
+                  </>
+                }
+              >
+                <input
+                  id={`${ids}-blog`}
+                  value={blogPath}
+                  onChange={(e) => setBlogPath(e.target.value)}
+                  placeholder="blog"
+                  aria-describedby={`${ids}-blog-hint`}
+                  className="field-input"
+                />
+                <span id={`${ids}-blog-hint`} className="field-hint">
+                  Facultatif · notes de version
+                </span>
+              </Field>
+            </div>
+          </fieldset>
+
+          <Field
+            id={`${ids}-format`}
+            label="Format Markdown"
+            help="L’auto-détection reconnaît GFM, MDX et Obsidian. Le JavaScript des fichiers MDX n’est jamais exécuté."
+          >
             <select
+              id={`${ids}-format`}
               value={format}
               onChange={(e) => setFormat(e.target.value as MarkdownFormat)}
-              className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+              className="field-input"
             >
               {FORMATS.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -163,26 +275,35 @@ export function GitHubImportModal({
                 </option>
               ))}
             </select>
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label>
-              Langue
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              id={`${ids}-locale`}
+              label="Langue"
+              help="Code de la langue des fichiers importés, par exemple en ou fr."
+            >
               <input
+                id={`${ids}-locale`}
                 value={locale}
                 onChange={(e) => setLocale(e.target.value)}
-                className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                className="field-input"
               />
-            </label>
-            <label>
-              Jeton d’accès (facultatif)
+            </Field>
+            <Field
+              id={`${ids}-token`}
+              label="Jeton d’accès (facultatif)"
+              help="Nécessaire pour un dépôt privé. Sans jeton, celui enregistré dans Outils → Intégrations est utilisé."
+            >
               <input
+                id={`${ids}-token`}
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="ghp_…"
-                className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                autoComplete="off"
+                className="field-input"
               />
-            </label>
+            </Field>
           </div>
           {targetSpaceId ? (
             <label className="flex items-start gap-2 text-sm">
@@ -192,10 +313,10 @@ export function GitHubImportModal({
                 checked={intoCurrent}
                 onChange={(e) => setIntoCurrent(e.target.checked)}
               />
-              <span>
+              <span className="font-semibold">
                 Mettre à jour l’espace actuel
                 {targetSpaceName ? ` (${targetSpaceName})` : ""}
-                <span className="mt-0.5 block text-xs text-[var(--ink-muted)]">
+                <span className="field-hint">
                   Sinon, un nouvel espace est créé.
                 </span>
               </span>
@@ -208,22 +329,20 @@ export function GitHubImportModal({
               checked={autoSync}
               onChange={(e) => setAutoSync(e.target.checked)}
             />
-            <span>
+            <span className="font-semibold">
               Synchronisation automatique
-              <span className="mt-0.5 block text-xs text-[var(--ink-muted)]">
+              <span className="field-hint">
                 Reprend le dépôt à l’ouverture de l’espace, selon l’intervalle.
               </span>
             </span>
           </label>
           {autoSync ? (
-            <label>
-              Intervalle
+            <Field id={`${ids}-interval`} label="Intervalle">
               <select
+                id={`${ids}-interval`}
                 value={syncIntervalMinutes}
-                onChange={(e) =>
-                  setSyncIntervalMinutes(Number(e.target.value))
-                }
-                className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                onChange={(e) => setSyncIntervalMinutes(Number(e.target.value))}
+                className="field-input"
               >
                 {INTERVALS.map((opt) => (
                   <option key={opt.minutes} value={opt.minutes}>
@@ -231,7 +350,7 @@ export function GitHubImportModal({
                   </option>
                 ))}
               </select>
-            </label>
+            </Field>
           ) : null}
         </div>
         {error ? (
@@ -239,19 +358,11 @@ export function GitHubImportModal({
             {error}
           </p>
         ) : null}
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm"
-            onClick={onClose}
-          >
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" className="secondary-button" onClick={onClose}>
             Annuler
           </button>
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-[var(--on-accent)] disabled:opacity-50"
-          >
+          <button type="submit" disabled={busy} className="primary-button">
             {busy ? "Import…" : "Importer le dépôt"}
           </button>
         </div>

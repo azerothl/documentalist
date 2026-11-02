@@ -62,11 +62,12 @@ function mix(a: string, b: string, amount: number) {
 /** Keep custom branding legible on text, selections, buttons and focus rings. */
 export function accentStyle(brand: string, theme: Theme): CSSProperties {
   const background =
-    theme === "dark" ? "#181a1b" : theme === "contrast" ? "#ffffff" : "#f6f3ee";
+    theme === "dark" ? "#0d2432" : theme === "contrast" ? "#ffffff" : "#ffffff";
   const surface =
-    theme === "dark" ? "#222526" : theme === "contrast" ? "#ffffff" : "#fffdf9";
-  const original = /^#[\da-f]{6}$/i.test(brand) ? brand : "#0f6e56";
-  const toward = theme === "dark" ? "#ffffff" : "#000000";
+    theme === "dark" ? "#12283a" : theme === "contrast" ? "#ffffff" : "#f8f9fb";
+  const original = /^#[\da-f]{6}$/i.test(brand) ? brand : "#1f425b";
+  // In dark mode, lighten toward a pale sky blue so FASST navy stays blue.
+  const toward = theme === "dark" ? "#e3eef5" : "#000000";
   let accent = original;
   for (let i = 0; i <= 100; i++) {
     accent = mix(original, toward, i / 100);

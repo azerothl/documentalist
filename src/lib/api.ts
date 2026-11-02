@@ -121,6 +121,7 @@ function validateBody(path: string, method: string, body: unknown) {
         content: contentSchema.optional(),
         href: z.string().nullable().optional(),
         locale: z.string().max(35).optional(),
+        section: z.enum(["learn", "reference", "blog"]).optional(),
         markdown: z.string().max(1_000_000).optional(),
         format: z
           .enum(["auto", "commonmark", "gfm", "mdx", "obsidian"])

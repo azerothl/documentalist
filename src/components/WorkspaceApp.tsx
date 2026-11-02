@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { Menu, Plus, FolderPlus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
+import { BrandLogo } from "@/components/BrandLogo";
 import { DocEditor } from "@/components/DocEditor";
 import { DocTree } from "@/components/DocTree";
 import { GitHubImportModal } from "@/components/GitHubImportModal";
@@ -24,9 +26,12 @@ import { hasUnpublishedChanges } from "@/lib/publish";
 import { apiFetch as fetch } from "@/lib/client-request";
 import { getLlmProvider } from "@/lib/llm-providers";
 import { buildTree } from "@/lib/tree";
+import { sectionDocuments } from "@/lib/sections";
 import { applyVariables } from "@/lib/tiptap-text";
+import { DOC_SECTIONS, docSection } from "@/lib/types";
 import type {
   Comment,
+  DocSection,
   DocumentRecord,
   Integration,
   LlmSettings,
@@ -77,6 +82,8 @@ type Props = {
   account: AccountIdentity;
   initialDocumentId?: string;
   initialLocale?: string;
+  /** Tab to open when no document is requested */
+  initialSection?: DocSection;
 };
 
 function mapNode(node: TipTapNode, vars: Record<string, string>): TipTapNode {
@@ -102,23 +109,22 @@ export function WorkspaceApp({
   account,
   initialDocumentId,
   initialLocale,
+  initialSection,
 }: Props) {
   const { preferences, theme, update: updateAppearance } = useAppearance();
   const readingMode = preferences.readingMode;
   const [payload, setPayload] = useState(initial);
-  const [activeId, setActiveId] = useState<string | null>(
-    initialDocumentId ??
-      initial.documents.find(
-        (d) =>
-          d.kind === "page" &&
-          d.locale === (initialLocale ?? initial.space.defaultLocale ?? "en"),
-      )?.id ??
-      initial.documents.find(
-        (d) =>
-          d.locale === (initialLocale ?? initial.space.defaultLocale ?? "en"),
-      )?.id ??
-      null,
-  );
+  const [activeId, setActiveId] = useState<string | null>(() => {
+    if (initialDocumentId) return initialDocumentId;
+    const startLocale = initialLocale ?? initial.space.defaultLocale ?? "en";
+    const docs = initial.documents.filter(
+      (d) =>
+        d.locale === startLocale &&
+        (!initialSection || docSection(d) === initialSection),
+    );
+    // A requested tab stays open even when it has no page yet.
+    return (docs.find((d) => d.kind === "page") ?? docs[0])?.id ?? null;
+  });
   const [saveState, setSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -145,6 +151,10 @@ export function WorkspaceApp({
   const [locale, setLocale] = useState(
     initialLocale ?? initial.space.defaultLocale ?? "en",
   );
+  const [section, setSection] = useState<DocSection>(() => {
+    const doc = initial.documents.find((d) => d.id === activeId);
+    return doc ? docSection(doc) : (initialSection ?? "reference");
+  });
   const [mdFormat, setMdFormat] = useState<
     "auto" | "commonmark" | "gfm" | "mdx" | "obsidian"
   >("auto");
@@ -182,6 +192,8 @@ export function WorkspaceApp({
     }).toString();
     if (url.href !== window.location.href)
       window.history.pushState(null, "", url);
+    const doc = payload.documents.find((d) => d.id === id);
+    if (doc) setSection(docSection(doc));
     setActiveId(id);
     setPreview(false);
     setNavigationOpen(false);
@@ -237,7 +249,53 @@ export function WorkspaceApp({
   useEffect(() => {
     document.title = `${active?.title ?? "Documentation"} — ${payload.space.name} — Documentalist`;
   }, [active?.title, payload.space.name]);
-  const tree = useMemo(() => buildTree(localeDocs), [localeDocs]);
+  const sectionDocs = useMemo(
+    () => sectionDocuments(localeDocs, section),
+    [localeDocs, section],
+  );
+  const tree = useMemo(() => buildTree(sectionDocs), [sectionDocs]);
+  const sectionCounts = useMemo(() => {
+    const counts = { learn: 0, reference: 0, blog: 0 } as Record<
+      DocSection,
+      number
+    >;
+    for (const d of localeDocs)
+      if (d.kind === "page") counts[docSection(d)] += 1;
+    return counts;
+  }, [localeDocs]);
+
+  function switchSection(next: DocSection) {
+    setSection(next);
+    const docs = sectionDocuments(localeDocs, next);
+    const first = docs.find((d) => d.kind === "page") ?? docs[0];
+    if (first) selectDocument(first.id);
+    else {
+      setActiveId(null);
+      setNavigationOpen(false);
+    }
+  }
+
+  async function moveToSection(next: DocSection) {
+    if (!active) return;
+    setMenuOpen(false);
+    await patchActive({ section: next });
+    const res = await fetch(
+      `/api/documents?spaceId=${encodeURIComponent(payload.space.id)}`,
+    );
+    if (res.ok) {
+      const data = (await res.json()) as { documents: DocumentRecord[] };
+      documentVersions.current = new Map(
+        data.documents.map((d) => [d.id, d.updatedAt]),
+      );
+      setPayload((prev) => ({ ...prev, documents: data.documents }));
+    }
+    setSection(next);
+    setOperationStatus(
+      `« ${active.title} » est maintenant dans l’onglet ${
+        DOC_SECTIONS.find((s) => s.id === next)?.label
+      }.`,
+    );
+  }
   const dirty = hasUnpublishedChanges(payload.space, payload.documents);
   const docComments = payload.comments.filter((c) => c.documentId === activeId);
   const versionSpaces =
@@ -251,6 +309,59 @@ export function WorkspaceApp({
     for (const v of payload.variables) m[v.key] = v.value;
     return m;
   }, [payload.variables]);
+
+  const persistContent = useCallback(
+    (documentId: string, content: TipTapDoc) => {
+      if (!pendingSaves.current.has(documentId))
+        pendingSaves.current.set(documentId, content);
+      const save = async () => {
+        setSaveState("saving");
+        try {
+          const res = await fetch(`/api/documents/${documentId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content,
+              expectedUpdatedAt: documentVersions.current.get(documentId),
+            }),
+          });
+          if (!res.ok) throw new Error("save failed");
+          const data = await res.json();
+          documentVersions.current.set(documentId, data.document.updatedAt);
+          setPayload((prev) => ({
+            ...prev,
+            documents: prev.documents.map((d) => {
+              if (d.id !== documentId) return d;
+              // Keep local editor content; only refresh server metadata.
+              return {
+                ...data.document,
+                content: d.content,
+                title: d.title,
+              };
+            }),
+          }));
+          if (pendingSaves.current.get(documentId) === content)
+            pendingSaves.current.delete(documentId);
+          setSaveState(pendingSaves.current.size ? "saving" : "saved");
+          return true;
+        } catch {
+          setSaveState("error");
+          return false;
+        }
+      };
+      saveChain.current = saveChain.current.then(save, save);
+      return saveChain.current;
+    },
+    [],
+  );
+
+  const flushPending = useCallback(async () => {
+    for (const timer of saveTimers.current.values()) window.clearTimeout(timer);
+    for (const [id, content] of pendingSaves.current)
+      if (!(await persistContent(id, content)))
+        throw new Error("La sauvegarde a échoué. Réessayez avant de publier.");
+    await saveChain.current;
+  }, [persistContent]);
 
   async function reloadSpace(spaceId: string) {
     await flushPending();
@@ -272,7 +383,13 @@ export function WorkspaceApp({
     const docs = data.documents.filter(
       (d) => (d.locale || "en") === nextLocale,
     );
-    setActiveId(docs.find((d) => d.kind === "page")?.id ?? docs[0]?.id ?? null);
+    const inSection = sectionDocuments(docs, section);
+    const first =
+      inSection.find((d) => d.kind === "page") ??
+      docs.find((d) => d.kind === "page") ??
+      docs[0];
+    if (first) setSection(docSection(first));
+    setActiveId(first?.id ?? null);
     setPreview(false);
     setMenuOpen(false);
   }
@@ -449,51 +566,6 @@ export function WorkspaceApp({
     };
   }, [query, payload.space.id, locale]);
 
-  const persistContent = useCallback(
-    (documentId: string, content: TipTapDoc) => {
-      if (!pendingSaves.current.has(documentId))
-        pendingSaves.current.set(documentId, content);
-      const save = async () => {
-        setSaveState("saving");
-        try {
-          const res = await fetch(`/api/documents/${documentId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              content,
-              expectedUpdatedAt: documentVersions.current.get(documentId),
-            }),
-          });
-          if (!res.ok) throw new Error("save failed");
-          const data = await res.json();
-          documentVersions.current.set(documentId, data.document.updatedAt);
-          setPayload((prev) => ({
-            ...prev,
-            documents: prev.documents.map((d) => {
-              if (d.id !== documentId) return d;
-              // Keep local editor content; only refresh server metadata.
-              return {
-                ...data.document,
-                content: d.content,
-                title: d.title,
-              };
-            }),
-          }));
-          if (pendingSaves.current.get(documentId) === content)
-            pendingSaves.current.delete(documentId);
-          setSaveState(pendingSaves.current.size ? "saving" : "saved");
-          return true;
-        } catch {
-          setSaveState("error");
-          return false;
-        }
-      };
-      saveChain.current = saveChain.current.then(save, save);
-      return saveChain.current;
-    },
-    [],
-  );
-
   const onEditorChange = useCallback(
     (content: TipTapDoc) => {
       if (!active || preview || readingMode) return;
@@ -518,13 +590,6 @@ export function WorkspaceApp({
     [active, persistContent, preview, readingMode],
   );
 
-  const flushPending = useCallback(async () => {
-    for (const timer of saveTimers.current.values()) window.clearTimeout(timer);
-    for (const [id, content] of pendingSaves.current)
-      if (!(await persistContent(id, content)))
-        throw new Error("La sauvegarde a échoué. Réessayez avant de publier.");
-    await saveChain.current;
-  }, [persistContent]);
   useEffect(() => {
     const beforeUnload = (e: BeforeUnloadEvent) => {
       if (pendingSaves.current.size) {
@@ -608,6 +673,7 @@ export function WorkspaceApp({
         kind: opts?.kind,
         content: opts?.content,
         locale,
+        section,
       }),
     });
     const data = await res.json();
@@ -848,7 +914,8 @@ export function WorkspaceApp({
         (d) =>
           d.parentId === parentId &&
           d.id !== dragId &&
-          d.locale === drag.locale,
+          d.locale === drag.locale &&
+          (parentId !== null || docSection(d) === docSection(drag)),
       )
       .sort((a, b) => a.position - b.position);
     let insertAt = siblings.findIndex((d) => d.id === dropId);
@@ -1003,8 +1070,33 @@ export function WorkspaceApp({
     </>
   );
 
+  const sectionTabs = (className: string) => (
+    <nav aria-label="Onglets de l’espace" className={className}>
+      {DOC_SECTIONS.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          className="site-tab"
+          aria-current={tab.id === section ? "page" : undefined}
+          onClick={() => switchSection(tab.id)}
+        >
+          {tab.label}
+          <span className="site-tab-count" aria-hidden="true">
+            {sectionCounts[tab.id]}
+          </span>
+          <span className="sr-only">
+            {` (${sectionCounts[tab.id]} page${sectionCounts[tab.id] > 1 ? "s" : ""})`}
+          </span>
+        </button>
+      ))}
+    </nav>
+  );
+
   const navigationContent = (
     <>
+      <div className="border-b border-[var(--line)] p-3 lg:hidden">
+        {sectionTabs("workspace-section-tabs")}
+      </div>
       <div className="space-y-2 border-b border-[var(--line)] p-3">
         <input
           value={query}
@@ -1055,17 +1147,18 @@ export function WorkspaceApp({
             ))}
           </ul>
         ) : null}
-        <div className="grid grid-cols-2 gap-1">
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            className="rounded-md bg-[var(--ink)] px-2 py-1.5 text-xs text-[var(--bg)]"
+            className="primary-button"
             onClick={() => void createDoc(null)}
           >
-            + Page
+            <Plus size={16} aria-hidden="true" />
+            {section === "blog" ? "Article" : "Page"}
           </button>
           <button
             type="button"
-            className="rounded-md border border-[var(--line)] px-2 py-1.5 text-xs"
+            className="secondary-button"
             onClick={() =>
               void createDoc(null, {
                 title: "Nouvelle catégorie",
@@ -1073,7 +1166,8 @@ export function WorkspaceApp({
               })
             }
           >
-            + Catégorie
+            <FolderPlus size={16} aria-hidden="true" />
+            Catégorie
           </button>
         </div>
       </div>
@@ -1084,7 +1178,10 @@ export function WorkspaceApp({
         </p>
         {tree.length === 0 ? (
           <p className="px-2 text-sm text-[var(--ink-faint)]">
-            Aucun document en « {locale} ». Créez une page ou changez de langue.
+            Aucun document dans l’onglet{" "}
+            {DOC_SECTIONS.find((t) => t.id === section)?.label} en « {locale} ».
+            Créez une page, importez un dossier depuis GitHub ou changez
+            d’onglet.
           </p>
         ) : (
           <DocTree
@@ -1145,24 +1242,22 @@ export function WorkspaceApp({
           ) : null}
         </div>
       ) : null}
-      <header className="workspace-header shrink-0 border-b border-[var(--line)]">
-        <div className="workspace-header-main">
+      <header className="workspace-header shrink-0">
+        <div className="workspace-topbar">
+          <button
+            type="button"
+            className="site-icon-button md:hidden"
+            aria-haspopup="dialog"
+            aria-expanded={navigationOpen}
+            aria-label="Documents"
+            onClick={() => setNavigationOpen(true)}
+          >
+            <Menu size={22} aria-hidden="true" />
+          </button>
+          <Link href="/" className="site-brand">
+            <BrandLogo height={30} priority />
+          </Link>
           <div className="workspace-context flex min-w-0 flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="secondary-button md:hidden"
-              aria-haspopup="dialog"
-              aria-expanded={navigationOpen}
-              onClick={() => setNavigationOpen(true)}
-            >
-              Documents
-            </button>
-            <Link
-              href="/"
-              className="mr-2 font-[family-name:var(--font-display)] text-lg tracking-tight"
-            >
-              Documentalist
-            </Link>
             <select
               aria-label="Espace de documentation"
               className="workspace-select"
@@ -1198,8 +1293,10 @@ export function WorkspaceApp({
                 const docs = payload.documents.filter(
                   (d) => (d.locale || "en") === next,
                 );
+                const inSection = sectionDocuments(docs, section);
                 setActiveId(
-                  docs.find((d) => d.kind === "page")?.id ??
+                  inSection.find((d) => d.kind === "page")?.id ??
+                    docs.find((d) => d.kind === "page")?.id ??
                     docs[0]?.id ??
                     null,
                 );
@@ -1214,26 +1311,31 @@ export function WorkspaceApp({
           </div>
           <AccountNavigation user={account} />
         </div>
-        <div className="workspace-header-actions flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <div
-            role="status"
-            aria-atomic="true"
-            className="flex flex-wrap gap-x-3 gap-y-1 text-sm"
-          >
-            <span className="text-[var(--ink-muted)]">{saveLabel}</span>
-            <span
-              className={
-                dirty
-                  ? "font-medium text-[var(--warning)]"
-                  : "text-[var(--ink-muted)]"
-              }
+        <div className="workspace-toolbar">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 lg:flex-nowrap">
+            {sectionTabs("site-tabs hidden flex-none lg:flex")}
+            <div
+              role="status"
+              aria-atomic="true"
+              className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-sm lg:flex-nowrap lg:overflow-hidden lg:whitespace-nowrap"
             >
-              {dirty
-                ? "Modifications à publier"
-                : payload.space.publishedAt
-                  ? "Version publiée à jour"
-                  : "Espace non publié"}
-            </span>
+              <span className="truncate text-[var(--ink-muted)]">
+                {saveLabel}
+              </span>
+              <span
+                className={
+                  dirty
+                    ? "font-medium text-[var(--warning)]"
+                    : "text-[var(--ink-muted)]"
+                }
+              >
+                {dirty
+                  ? "Modifications à publier"
+                  : payload.space.publishedAt
+                    ? "Version publiée à jour"
+                    : "Espace non publié"}
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="hidden items-center gap-2 md:flex">
@@ -1337,6 +1439,20 @@ export function WorkspaceApp({
                     })}
                     {active.markdownFormat ? ` · ${active.markdownFormat}` : ""}
                   </p>
+                  {docSection(active) === "blog" && active.kind === "page" ? (
+                    <label className="mt-1 inline-flex items-center gap-2 text-xs text-[var(--ink-muted)]">
+                      Date de publication
+                      <input
+                        type="date"
+                        value={active.date ?? ""}
+                        disabled={preview || readingMode}
+                        onChange={(e) =>
+                          void patchActive({ date: e.target.value || null })
+                        }
+                        className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5"
+                      />
+                    </label>
+                  ) : null}
                 </div>
                 <div
                   ref={menuRef}
@@ -1429,6 +1545,18 @@ export function WorkspaceApp({
                           ? "Afficher sur le site"
                           : "Masquer du site"}
                       </button>
+                      {DOC_SECTIONS.filter(
+                        (t) => t.id !== docSection(active),
+                      ).map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
+                          onClick={() => void moveToSection(t.id)}
+                        >
+                          Déplacer vers l’onglet {t.label}
+                        </button>
+                      ))}
                       <button
                         type="button"
                         className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
@@ -1744,7 +1872,7 @@ export function WorkspaceApp({
                 void saveSpaceSettings({
                   name: String(fd.get("name") ?? ""),
                   description: String(fd.get("description") ?? ""),
-                  accentColor: String(fd.get("accentColor") ?? "#0F6E56"),
+                  accentColor: String(fd.get("accentColor") ?? "#1F425B"),
                   accessPassword:
                     String(fd.get("accessPassword") ?? "") || null,
                   isPublic: fd.get("isPublic") === "on",
@@ -2003,16 +2131,16 @@ export function WorkspaceApp({
               }}
             >
               <option value="root">Fin de l’arborescence principale</option>
-              {localeDocs
+              {sectionDocs
                 .filter(
                   (d) =>
-                    !documentTrail(localeDocs, d.id).some(
+                    !documentTrail(sectionDocs, d.id).some(
                       (parent) => parent.id === activeId,
                     ),
                 )
                 .map((d) => (
                   <option key={d.id} value={d.id}>
-                    {documentTrail(localeDocs, d.id)
+                    {documentTrail(sectionDocs, d.id)
                       .map((p) => p.title)
                       .join(" / ")}
                   </option>

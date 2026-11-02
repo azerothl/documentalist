@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
-import { Fraunces, Source_Sans_3, IBM_Plex_Mono } from "next/font/google";
+import { Barlow, DM_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { AppearanceProvider } from "@/components/Appearance";
 import { appearanceBootstrap } from "@/lib/appearance";
 
-const display = Fraunces({
+// Charte FASST : Barlow pour les titres, DM Sans pour le texte.
+const display = Barlow({
   variable: "--font-display",
   subsets: ["latin"],
+  weight: ["500", "600", "700"],
 });
 
-const body = Source_Sans_3({
+const body = DM_Sans({
   variable: "--font-body",
   subsets: ["latin"],
 });

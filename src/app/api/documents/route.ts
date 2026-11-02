@@ -1,7 +1,13 @@
 import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
 import { createDocument, listDocuments } from "@/lib/store";
-import type { DocumentKind, MarkdownFormat, TipTapDoc } from "@/lib/types";
+import type {
+  DocSection,
+  DocumentKind,
+  MarkdownFormat,
+  TipTapDoc,
+} from "@/lib/types";
+import { isSection } from "@/lib/sections";
 
 async function handleGET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -23,6 +29,7 @@ async function handlePOST(request: Request) {
     href?: string | null;
     locale?: string;
     markdownFormat?: MarkdownFormat | null;
+    section?: DocSection;
   };
   if (!body.spaceId || !body.title?.trim()) {
     return NextResponse.json(
@@ -39,6 +46,7 @@ async function handlePOST(request: Request) {
     href: body.href,
     locale: body.locale,
     markdownFormat: body.markdownFormat,
+    section: isSection(body.section) ? body.section : undefined,
   });
   return NextResponse.json({ document }, { status: 201 });
 }

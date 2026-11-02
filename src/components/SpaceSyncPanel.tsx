@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { InfoTip } from "@/components/InfoTip";
 import type { SpaceImportSource } from "@/lib/types";
 
 type Props = {
@@ -35,27 +36,39 @@ export function SpaceSyncPanel({
   const [repository, setRepository] = useState(importSource?.repository ?? "");
   const [branch, setBranch] = useState(importSource?.branch ?? "main");
   const [path, setPath] = useState(importSource?.path ?? "docs");
+  const [learnPath, setLearnPath] = useState(importSource?.learnPath ?? "");
+  const [blogPath, setBlogPath] = useState(importSource?.blogPath ?? "");
   const [autoSync, setAutoSync] = useState(importSource?.autoSync ?? true);
   const [syncIntervalMinutes, setSyncIntervalMinutes] = useState(
     importSource?.syncIntervalMinutes ?? 60,
   );
 
-  useEffect(() => {
-    setProvider(importSource?.provider ?? "github");
-    setRepository(importSource?.repository ?? "");
-    setBranch(importSource?.branch ?? "main");
-    setPath(importSource?.path ?? "docs");
-    setAutoSync(importSource?.autoSync ?? true);
-    setSyncIntervalMinutes(importSource?.syncIntervalMinutes ?? 60);
-  }, [
+  // Refill the form when the space or its linked source changes. Adjusted
+  // during render rather than in an effect (react.dev: "Adjusting some
+  // state when a prop changes").
+  const sourceKey = JSON.stringify([
     spaceId,
     importSource?.provider,
     importSource?.repository,
     importSource?.branch,
     importSource?.path,
+    importSource?.learnPath,
+    importSource?.blogPath,
     importSource?.autoSync,
     importSource?.syncIntervalMinutes,
   ]);
+  const [syncedKey, setSyncedKey] = useState(sourceKey);
+  if (sourceKey !== syncedKey) {
+    setSyncedKey(sourceKey);
+    setProvider(importSource?.provider ?? "github");
+    setRepository(importSource?.repository ?? "");
+    setBranch(importSource?.branch ?? "main");
+    setPath(importSource?.path ?? "docs");
+    setLearnPath(importSource?.learnPath ?? "");
+    setBlogPath(importSource?.blogPath ?? "");
+    setAutoSync(importSource?.autoSync ?? true);
+    setSyncIntervalMinutes(importSource?.syncIntervalMinutes ?? 60);
+  }
 
   async function saveSource(next: SpaceImportSource, thenSync = false) {
     setBusy(true);
@@ -92,6 +105,12 @@ export function SpaceSyncPanel({
       repository: repository.trim() || "notion",
       branch: branch.trim() || "main",
       path: path.replace(/^\/+|\/+$/g, "") || "docs",
+      ...(provider === "github"
+        ? {
+            learnPath: learnPath.replace(/^\/+|\/+$/g, ""),
+            blogPath: blogPath.replace(/^\/+|\/+$/g, ""),
+          }
+        : {}),
       format: "auto",
       locale: importSource?.locale ?? "en",
       autoSync,
@@ -119,6 +138,17 @@ export function SpaceSyncPanel({
             {importSource.branch ? `@${importSource.branch}` : ""}
             {importSource.path ? ` / ${importSource.path}` : ""}
           </p>
+          {importSource.learnPath || importSource.blogPath ? (
+            <p className="text-xs text-[var(--ink-muted)]">
+              Reference : {importSource.path || "/"}
+              {importSource.learnPath
+                ? ` · Learn : ${importSource.learnPath}`
+                : ""}
+              {importSource.blogPath
+                ? ` · Blog : ${importSource.blogPath}`
+                : ""}
+            </p>
+          ) : null}
           {importSource.lastSyncAt ? (
             <p className="text-xs text-[var(--ink-muted)]">
               Dernière sync :{" "}
@@ -177,9 +207,7 @@ export function SpaceSyncPanel({
                 void onResync()
                   .then(() => setMessage("Synchronisation terminée"))
                   .catch((e) =>
-                    setMessage(
-                      e instanceof Error ? e.message : "Sync échouée",
-                    ),
+                    setMessage(e instanceof Error ? e.message : "Sync échouée"),
                   )
                   .finally(() => setBusy(false));
               }}
@@ -228,8 +256,8 @@ export function SpaceSyncPanel({
       ) : (
         <div className="space-y-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm">
           <p className="text-xs text-[var(--ink-muted)]">
-            Aucune source liée à cet espace. Liez un dépôt pour pouvoir
-            relancer la sync et activer la synchronisation automatique.
+            Aucune source liée à cet espace. Liez un dépôt pour pouvoir relancer
+            la sync et activer la synchronisation automatique.
           </p>
           <div className="flex flex-wrap gap-1">
             {(["github", "gitlab", "notion"] as const).map((p) => (
@@ -271,7 +299,7 @@ export function SpaceSyncPanel({
                   />
                 </label>
                 <label className="block text-xs">
-                  Dossier
+                  Dossier docs (Reference)
                   <input
                     value={path}
                     onChange={(e) => setPath(e.target.value)}
@@ -279,6 +307,42 @@ export function SpaceSyncPanel({
                   />
                 </label>
               </div>
+              {provider === "github" ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="text-xs">
+                    <div className="field-label text-xs">
+                      <label htmlFor={`${spaceId}-learn`}>Dossier Learn</label>
+                      <InfoTip label="Aide : dossier Learn">
+                        Guides et e-learning affichés dans l’onglet Learn.
+                        Laissez vide pour ne pas créer cet onglet.
+                      </InfoTip>
+                    </div>
+                    <input
+                      id={`${spaceId}-learn`}
+                      value={learnPath}
+                      onChange={(e) => setLearnPath(e.target.value)}
+                      placeholder="learn"
+                      className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                    />
+                  </div>
+                  <div className="text-xs">
+                    <div className="field-label text-xs">
+                      <label htmlFor={`${spaceId}-blog`}>Dossier Blog</label>
+                      <InfoTip label="Aide : dossier Blog">
+                        Notes de version affichées dans l’onglet Blog, de la
+                        plus récente à la plus ancienne.
+                      </InfoTip>
+                    </div>
+                    <input
+                      id={`${spaceId}-blog`}
+                      value={blogPath}
+                      onChange={(e) => setBlogPath(e.target.value)}
+                      placeholder="blog"
+                      className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
+                    />
+                  </div>
+                </div>
+              ) : null}
             </>
           ) : (
             <p className="text-xs text-[var(--ink-muted)]">
@@ -300,9 +364,7 @@ export function SpaceSyncPanel({
               <select
                 className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5"
                 value={syncIntervalMinutes}
-                onChange={(e) =>
-                  setSyncIntervalMinutes(Number(e.target.value))
-                }
+                onChange={(e) => setSyncIntervalMinutes(Number(e.target.value))}
               >
                 {INTERVALS.map((opt) => (
                   <option key={opt.minutes} value={opt.minutes}>
