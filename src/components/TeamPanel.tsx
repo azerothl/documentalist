@@ -30,7 +30,6 @@ export function TeamPanel({ admin }: { admin: boolean }) {
   const [inviteRole, setInviteRole] = useState("editor");
   const [inviteScope, setInviteScope] = useState<"all" | "selected">("selected");
   const [inviteSpaceIds, setInviteSpaceIds] = useState<string[]>([]);
-  const [inviteSpacesInitialized, setInviteSpacesInitialized] = useState(false);
   async function load() {
     const r = await fetch("/api/admin/team");
     const v = await r.json();
@@ -44,7 +43,12 @@ export function TeamPanel({ admin }: { admin: boolean }) {
         .then(async (r) => {
           const v = await r.json();
           if (!r.ok) throw new Error(v.error);
-          if (active) setData(v);
+          if (active) {
+            setData(v);
+            setInviteSpaceIds(
+              (v as TeamData).spaces.slice(0, 1).map((space) => space.id),
+            );
+          }
         })
         .catch((e) => {
           if (active) setError(e.message);
@@ -53,12 +57,6 @@ export function TeamPanel({ admin }: { admin: boolean }) {
       active = false;
     };
   }, [admin]);
-  useEffect(() => {
-    if (!inviteSpacesInitialized && data) {
-      setInviteSpaceIds(data.spaces.slice(0, 1).map((space) => space.id));
-      setInviteSpacesInitialized(true);
-    }
-  }, [data, inviteSpacesInitialized]);
   async function action(path: string, method: string, body: unknown) {
     setBusy(true);
     setError("");
