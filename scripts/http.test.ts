@@ -346,9 +346,10 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
         const marker = await json("/api/spaces", "POST", {
           name: "État à annuler",
         });
-        const beforeRestore = await json("/api/admin/team");
         await json("/api/admin/backup", "POST", {
-          revision: beforeRestore.backups[0].revision,
+          // Restore a snapshot known to predate the marker. Reading team data
+          // can also migrate newly created spaces and record another snapshot.
+          revision: state.backups[0].revision,
         });
         const afterRestore = await json("/api/spaces");
         assert.ok(

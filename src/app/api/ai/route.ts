@@ -1,5 +1,6 @@
 import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
+import { canAccessSpace, currentUser } from "@/lib/auth";
 import {
   buildAiContextBundle,
   formatAiContextForPrompt,
@@ -71,6 +72,7 @@ async function handlePOST(request: Request) {
   }
 
   const data = await readStore();
+  const account = (await currentUser())!;
   const settings = resolveLlmSettings(data, spaceId);
   const space = await getSpace(spaceId);
   const document = documentId ? await getDocument(documentId) : undefined;
@@ -98,7 +100,10 @@ async function handlePOST(request: Request) {
     if (coverage.length > 0 && missing.length === coverage.length) {
       const otherSpaces: { name: string; terms: string[] }[] = [];
       for (const s of data.spaces) {
-        if (s.id === spaceId) continue;
+        if (
+          s.id === spaceId ||
+          !canAccessSpace(account, s.id)
+        ) continue;
         const docs = data.documents.filter(
           (d) =>
             d.spaceId === s.id &&

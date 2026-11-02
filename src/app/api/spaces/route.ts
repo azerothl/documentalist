@@ -1,9 +1,12 @@
 import { secureRoute } from "@/lib/api";
 import { NextResponse } from "next/server";
+import { canAccessSpace, currentUser } from "@/lib/auth";
 import { createSpace, listSpaces } from "@/lib/store";
 
 async function handleGET() {
-  const spaces = await listSpaces();
+  const user = (await currentUser())!;
+  const allSpaces = await listSpaces();
+  const spaces = allSpaces.filter((space) => canAccessSpace(user, space.id));
   return NextResponse.json({ spaces });
 }
 

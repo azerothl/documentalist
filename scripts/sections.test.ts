@@ -223,7 +223,17 @@ test("import par onglet, synchronisation et déplacement", async (t) => {
 
     await t.test("création et déplacement suivent l’onglet", async () => {
       const docs = await store.listDocuments(spaceId);
-      const folder = docs.find((d) => d.sourcePath === "docs/hooks")!;
+      const importedFolder = docs.find((d) => d.sourcePath === "docs/hooks")!;
+      await assert.rejects(
+        store.updateDocument(importedFolder.id, { section: "learn" }),
+        { name: "GitHubReadOnlyDocumentError" },
+      );
+      const folder = await store.createDocument({
+        spaceId,
+        title: "Local hooks",
+        kind: "category",
+        section: "reference",
+      });
       const child = await store.createDocument({
         spaceId,
         title: "useEffect",

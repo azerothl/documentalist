@@ -13,7 +13,15 @@ import path from "node:path";
 import type { Space } from "./types";
 
 export type Role = "admin" | "editor" | "viewer";
-export type User = { id: string; email: string; name: string; role: Role };
+export type SpaceScope = "all" | "selected";
+export type User = {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  spaceScope: SpaceScope;
+  spaceIds: string[];
+};
 export const SESSION_COOKIE = "documentalist-session";
 export const cookieOptions = {
   httpOnly: true,
@@ -61,7 +69,14 @@ export function setupToken() {
 }
 
 export function createUser(
-  input: { email: string; name: string; password: string; role: Role },
+  input: {
+    email: string;
+    name: string;
+    password: string;
+    role: Role;
+    spaceScope?: SpaceScope;
+    spaceIds?: string[];
+  },
   first = false,
 ) {
   if (input.password.length < 12 || input.password.length > 256)
@@ -73,22 +88,43 @@ export function createUser(
     email: input.email.trim().toLowerCase(),
     name: input.name.trim().slice(0, 100) || input.email,
     role: input.role,
+    spaceScope: input.role === "admin" ? "all" : input.spaceScope ?? "all",
+    spaceIds:
+      input.role === "admin" || (input.spaceScope ?? "all") === "all"
+        ? []
+        : [...new Set(input.spaceIds ?? [])],
   };
   const passwordHash = hashPassword(input.password);
   database().transaction(() => {
     if (first && hasUsers()) throw new Error("Le compte initial existe déjà.");
-    database()
-      .prepare(
-        "INSERT INTO users(id,email,name,password_hash,role) VALUES (?,?,?,?,?)",
-      )
-      .run(user.id, user.email, user.name, passwordHash, user.role);
+    const db = database();
+    db.prepare(
+      "INSERT INTO users(id,email,name,password_hash,role,space_scope) VALUES (?,?,?,?,?,?)",
+    ).run(
+      user.id,
+      user.email,
+      user.name,
+      passwordHash,
+      user.role,
+      user.spaceScope,
+    );
+    const grant = db.prepare(
+      "INSERT INTO user_space_access(user_id,space_id) VALUES (?,?)",
+    );
+    for (const spaceId of user.spaceIds) grant.run(user.id, spaceId);
   })();
   audit(user.email, "account.created", user.id);
   return user;
 }
 
 export function createInvitedUser(
-  input: { email: string; name: string; role: Role },
+  input: {
+    email: string;
+    name: string;
+    role: Role;
+    spaceScope?: SpaceScope;
+    spaceIds?: string[];
+  },
   actor = "administrator",
 ) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))
@@ -103,13 +139,24 @@ export function createInvitedUser(
     email,
     name,
     role: input.role,
+    spaceScope: input.role === "admin" ? "all" : input.spaceScope ?? "all",
+    spaceIds:
+      input.role === "admin" || (input.spaceScope ?? "all") === "all"
+        ? []
+        : [...new Set(input.spaceIds ?? [])],
   };
   // Keep the existing NOT NULL schema while ensuring the placeholder cannot
   // be used to authenticate. password_set gates all login attempts.
   const passwordHash = hashPassword(randomBytes(48).toString("hex"));
-  db.prepare(
-    "INSERT INTO users(id,email,name,password_hash,role,password_set) VALUES (?,?,?,?,?,0)",
-  ).run(user.id, user.email, user.name, passwordHash, user.role);
+  db.transaction(() => {
+    db.prepare(
+      "INSERT INTO users(id,email,name,password_hash,role,password_set,space_scope) VALUES (?,?,?,?,?,0,?)",
+    ).run(user.id, user.email, user.name, passwordHash, user.role, user.spaceScope);
+    const grant = db.prepare(
+      "INSERT INTO user_space_access(user_id,space_id) VALUES (?,?)",
+    );
+    for (const spaceId of user.spaceIds) grant.run(user.id, spaceId);
+  })();
   audit(actor, "account.invited", user.id);
   return user;
 }
@@ -198,13 +245,34 @@ export function login(email: string, password: string) {
 export async function currentUser(): Promise<User | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  return (
-    (database()
+  const db = database();
+  const user = db
       .prepare(
-        `SELECT u.id,u.email,u.name,u.role FROM sessions s JOIN users u ON s.user_id=u.id
+        `SELECT u.id,u.email,u.name,u.role,u.space_scope FROM sessions s JOIN users u ON s.user_id=u.id
     WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0`,
       )
-      .get(tokenDigest(token), Date.now()) as User | undefined) ?? null
+      .get(tokenDigest(token), Date.now()) as
+      | (Omit<User, "spaceScope" | "spaceIds"> & { space_scope: SpaceScope })
+      | undefined;
+  if (!user) return null;
+  const spaceIds = db
+    .prepare("SELECT space_id FROM user_space_access WHERE user_id=? ORDER BY space_id")
+    .all(user.id) as { space_id: string }[];
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    spaceScope: user.space_scope,
+    spaceIds: spaceIds.map((item) => item.space_id),
+  };
+}
+
+export function canAccessSpace(user: User, spaceId: string) {
+  return (
+    user.role === "admin" ||
+    user.spaceScope === "all" ||
+    user.spaceIds.includes(spaceId)
   );
 }
 

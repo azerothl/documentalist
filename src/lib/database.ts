@@ -50,7 +50,7 @@ export function database() {
   if (globals.documentalistDb) return globals.documentalistDb;
   mkdirSync(dataDirectory, { recursive: true });
   const db = new Database(path.join(dataDirectory, "documentalist.sqlite"));
-  if (Number(db.pragma("user_version", { simple: true })) > 2) {
+  if (Number(db.pragma("user_version", { simple: true })) > 3) {
     db.close();
     throw new Error(
       "Version de base de données plus récente que l’application.",
@@ -62,7 +62,7 @@ export function database() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, payload TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS state_backups (revision INTEGER PRIMARY KEY, payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-    CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','editor','viewer')), disabled INTEGER NOT NULL DEFAULT 0, password_set INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','editor','viewer')), disabled INTEGER NOT NULL DEFAULT 0, password_set INTEGER NOT NULL DEFAULT 1, space_scope TEXT NOT NULL DEFAULT 'all' CHECK(space_scope IN ('all','selected')));
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS account_tokens (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, purpose TEXT NOT NULL CHECK(purpose IN ('setup','reset')), expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS portal_magic_tokens (token_hash TEXT PRIMARY KEY, space_id TEXT NOT NULL, email_hash TEXT NOT NULL, expires_at INTEGER NOT NULL);
@@ -75,11 +75,17 @@ export function database() {
     db.exec(
       "ALTER TABLE users ADD COLUMN password_set INTEGER NOT NULL DEFAULT 1",
     );
+  if (!userColumns.some((column) => column.name === "space_scope"))
+    db.exec(
+      "ALTER TABLE users ADD COLUMN space_scope TEXT NOT NULL DEFAULT 'all' CHECK(space_scope IN ('all','selected'))",
+    );
   db.exec(`
+    CREATE TABLE IF NOT EXISTS user_space_access (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, space_id TEXT NOT NULL, PRIMARY KEY(user_id,space_id));
+    CREATE INDEX IF NOT EXISTS user_space_access_space ON user_space_access(space_id);
     CREATE INDEX IF NOT EXISTS account_tokens_user ON account_tokens(user_id);
     CREATE INDEX IF NOT EXISTS portal_magic_space_email ON portal_magic_tokens(space_id,email_hash);
     CREATE INDEX IF NOT EXISTS portal_sessions_space_email ON portal_access_sessions(space_id,email_hash);
-    PRAGMA user_version = 2;
+    PRAGMA user_version = 3;
   `);
   globals.documentalistDb = db;
   return db;
