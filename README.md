@@ -20,6 +20,8 @@ Ouvrir [le compte initial](http://localhost:3000/setup). Le code d’installatio
 
 Pour les réglages d’hébergement, partir de [.env.example](.env.example). `DOCUMENTALIST_URL` doit correspondre à l’URL réellement ouverte par les utilisateurs. En production, utiliser HTTPS ; pour un serveur de production **local sur HTTP**, définir explicitement `DOCUMENTALIST_COOKIE_SECURE=false`.
 
+Les invitations de comptes et les liens magiques nécessitent un relais SMTP. Définir `DOCUMENTALIST_SMTP_URL` et `DOCUMENTALIST_EMAIL_FROM` dans l’environnement du serveur (par exemple dans `/etc/documentalist/production.env` sur la Dedibox). Utiliser `smtps://...:465` ou `smtp://...:587` ; encoder les caractères réservés du nom d’utilisateur et du mot de passe dans l’URL. Les invitations de compte expirent après 24 heures, les liens magiques après 24 heures et les sessions de lecture après 8 heures. OIDC/SSO n’est pas encore inclus.
+
 ```sh
 npm run build
 npm start
@@ -75,21 +77,21 @@ La compilation utilise webpack et un correctif ciblé pour les volumes Windows q
 
 ## Fonctions disponibles
 
-| Fonction                | Comportement                                                                                                                           |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Espaces et arborescence | Pages, catégories, liens, glisser-déposer, détection des cycles et des slugs en double                                                 |
-| Édition                 | Blocs `/`, tableaux, tâches, images par URL, encadrés, coloration du code et aperçu                                                    |
-| Sauvegarde              | File de sauvegarde par document, attente avant publication, alerte si la page est quittée avant enregistrement, révisions restaurables |
-| Publication             | Instantané des documents et variables, pages masquées exclues côté serveur, retrait possible via le réglage Public                     |
-| Portail                 | Onglets Learn, Reference et Blog, interface française ou anglaise selon la langue sélectionnée (repli français), dates localisées, lecture sans charger TipTap, sommaire, recherche (Ctrl K), menu mobile et versions |
-| Accès                   | Administrateur, rédacteur et lecteur ; mot de passe de portail vérifié côté serveur avec cookie HttpOnly                               |
-| IA                      | Question, rédaction et correction sur le contexte de la page avec OpenAI, Anthropic ou une API compatible                              |
-| Import/export           | Markdown ; adaptation GFM, Obsidian et MDX sans exécuter de JavaScript                                                                 |
+| Fonction                | Comportement                                                                                                                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Espaces et arborescence | Pages, catégories, liens, glisser-déposer, détection des cycles et des slugs en double                                                                                                                                            |
+| Édition                 | Blocs `/`, tableaux, tâches, images par URL, encadrés, coloration du code et aperçu                                                                                                                                               |
+| Sauvegarde              | File de sauvegarde par document, attente avant publication, alerte si la page est quittée avant enregistrement, révisions restaurables                                                                                            |
+| Publication             | Instantané des documents et variables, pages masquées exclues côté serveur ; choix public, code partagé ou lien magique nominatif ; retrait possible du portail public                                                              |
+| Portail                 | Onglets Learn, Reference et Blog, interface française ou anglaise selon la langue sélectionnée (repli français), dates localisées, lecture sans TipTap, sommaire, recherche (Ctrl K), menu mobile et versions                         |
+| Accès                   | Administrateur, rédacteur et lecteur ; invitations d’équipe par courriel ; portails publics, par code ou réservés aux adresses invitées ; vérification côté serveur et cookies HttpOnly                                            |
+| IA                      | Question, rédaction et correction sur le contexte de la page avec OpenAI, Anthropic ou une API compatible                                                                                                                         |
+| Import/export           | Markdown ; adaptation GFM, Obsidian et MDX sans exécuter de JavaScript                                                                                                                                                            |
 | GitHub                  | Import d’un arbre Markdown/MDX par onglet : dossier docs → Reference, dossier Learn, dossier Blog (notes de version datées). Ordre SUMMARY → liens README → frontmatter → préfixe, sync manuelle ou automatique, token facultatif |
-| GitLab                  | Import d’un arbre Markdown/MDX dans un nouvel espace, sync manuelle ou automatique, hôte et token configurables                        |
-| Notion                  | Import de la page partagée et sous-pages, sync manuelle ou automatique ; blocs non convertis signalés                                 |
-| OpenAPI                 | JSON ou YAML : paramètres, corps de requête, réponses, schémas locaux et sécurité                                                      |
-| Notifications           | Slack, Discord et webhook de publication ; succès et échecs consignés dans l’activité                                                  |
+| GitLab                  | Import d’un arbre Markdown/MDX dans un nouvel espace, sync manuelle ou automatique, hôte et token configurables                                                                                                                   |
+| Notion                  | Import de la page partagée et sous-pages, sync manuelle ou automatique ; blocs non convertis signalés                                                                                                                             |
+| OpenAPI                 | JSON ou YAML : paramètres, corps de requête, réponses, schémas locaux et sécurité                                                                                                                                                 |
+| Notifications           | Slack, Discord et webhook de publication ; succès et échecs consignés dans l’activité                                                                                                                                             |
 
 Les intégrations sont accessibles aux administrateurs dans Outils → Intégrations. Enregistrer la connexion avant l’import GitLab/Notion. Les imports GitHub, GitLab et Notion lient une source à l’espace : Relancer sync depuis l’en-tête, ou synchronisation automatique à l’ouverture / selon l’intervalle choisi (upsert par chemin source). L’ordre des pages suit `SUMMARY.md` s’il est présent, sinon les liens depuis `README.md` / `index.md`, puis le frontmatter (`sidebar_position`, `nav_order`, …), les préfixes numériques (`01-…`) et un tri naturel. OpenAPI et les fichiers Markdown locaux restent des copies ponctuelles. Limites : 500 fichiers Markdown pour GitHub (zipball, repli blobs), 80 fichiers/pages pour GitLab et Notion, 2 000 blocs Notion, 200 opérations OpenAPI. Les références OpenAPI externes ne sont pas téléchargées. Les images Notion hébergées par Notion peuvent expirer ; elles ne sont pas copiées dans un stockage média.
 

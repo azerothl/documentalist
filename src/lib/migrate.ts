@@ -148,6 +148,25 @@ export function migrateStore(data: StoreData): StoreData {
     // Legacy free-form CSS is retired; the portal supports an accent colour.
     space.customCss = "";
     if (space.accessPassword === undefined) space.accessPassword = null;
+    if (!space.accessMode) {
+      if (space.accessPassword) space.accessMode = "password";
+      else if (space.publishedSnapshot && !space.isPublic)
+        // Preserve previously hidden published portals as private instead of
+        // making them public during the access-mode migration.
+        space.accessMode = "magic_link";
+      else space.accessMode = "public";
+    }
+    if (!Array.isArray(space.allowedEmails)) space.allowedEmails = [];
+    else
+      space.allowedEmails = [
+        ...new Set(
+          space.allowedEmails
+            .filter((email) => typeof email === "string")
+            .map((email) => email.trim().toLowerCase())
+            .filter(Boolean),
+        ),
+      ];
+    space.isPublic = space.accessMode === "public";
     if (space.customCss === undefined) space.customCss = "";
     if (!space.versionGroupId) space.versionGroupId = `vg_${space.id}`;
     if (!space.versionLabel) space.versionLabel = "current";
@@ -184,7 +203,10 @@ export function migrateStore(data: StoreData): StoreData {
         d.locale === doc.locale &&
         d.id !== doc.id,
     );
-    doc.slug = uniqueSlug(doc.title || doc.slug || "untitled", siblings.map((d) => d.slug));
+    doc.slug = uniqueSlug(
+      doc.title || doc.slug || "untitled",
+      siblings.map((d) => d.slug),
+    );
   }
 
   for (const space of data.spaces) {

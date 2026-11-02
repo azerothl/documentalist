@@ -64,6 +64,7 @@ export const spaceImportSourceSchema = z.object({
 export const spacePatchSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(5000).optional(),
+  accessMode: z.enum(["public", "password", "magic_link"]).optional(),
   isPublic: z.boolean().optional(),
   accentColor: z
     .string()

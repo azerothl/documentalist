@@ -14,10 +14,17 @@ export function clientData<T>(value: T): T {
   if (Array.isArray(value)) return value.map(clientData) as T;
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
-    Object.entries(value).map(([name, entry]) => [
-      name,
-      secretNames.has(name) ? (entry ? SECRET_MASK : entry) : clientData(entry),
-    ]),
+    Object.entries(value).map(([name, entry]) => {
+      if (name === "allowedEmails") return [name, []];
+      return [
+        name,
+        secretNames.has(name)
+          ? entry
+            ? SECRET_MASK
+            : entry
+          : clientData(entry),
+      ];
+    }),
   ) as T;
 }
 
