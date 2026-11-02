@@ -26,6 +26,10 @@ import { hasUnpublishedChanges } from "@/lib/publish";
 import { apiFetch as fetch } from "@/lib/client-request";
 import { getLlmProvider } from "@/lib/llm-providers";
 import { buildTree } from "@/lib/tree";
+import {
+  GITHUB_READ_ONLY_MESSAGE,
+  isGitHubImportedDocument,
+} from "@/lib/document-access";
 import { sectionDocuments } from "@/lib/sections";
 import { applyVariables } from "@/lib/tiptap-text";
 import { DOC_SECTIONS, docSection } from "@/lib/types";
@@ -246,6 +250,7 @@ export function WorkspaceApp({
     [payload.documents, locale],
   );
   const active = localeDocs.find((d) => d.id === activeId) ?? null;
+  const githubReadOnly = isGitHubImportedDocument(payload.space, active);
   useEffect(() => {
     document.title = `${active?.title ?? "Documentation"} — ${payload.space.name} — Documentalist`;
   }, [active?.title, payload.space.name]);
@@ -276,7 +281,7 @@ export function WorkspaceApp({
   }
 
   async function moveToSection(next: DocSection) {
-    if (!active) return;
+    if (!active || githubReadOnly) return;
     setMenuOpen(false);
     await patchActive({ section: next });
     const res = await fetch(
@@ -568,7 +573,7 @@ export function WorkspaceApp({
 
   const onEditorChange = useCallback(
     (content: TipTapDoc) => {
-      if (!active || preview || readingMode) return;
+      if (!active || preview || readingMode || githubReadOnly) return;
       setPayload((prev) => ({
         ...prev,
         documents: prev.documents.map((d) =>
@@ -587,7 +592,7 @@ export function WorkspaceApp({
         }, 700),
       );
     },
-    [active, persistContent, preview, readingMode],
+    [active, githubReadOnly, persistContent, preview, readingMode],
   );
 
   useEffect(() => {
@@ -614,6 +619,10 @@ export function WorkspaceApp({
 
   async function patchActive(patch: Partial<DocumentRecord>) {
     if (!active) return;
+    if (githubReadOnly) {
+      setNotice(GITHUB_READ_ONLY_MESSAGE);
+      return;
+    }
     setPayload((prev) => ({
       ...prev,
       documents: prev.documents.map((d) =>
@@ -754,7 +763,7 @@ export function WorkspaceApp({
   }
 
   function insertAiText(text: string) {
-    if (!active || preview) return;
+    if (!active || preview || githubReadOnly) return;
     const paragraphs = text
       .split(/\n{2,}/)
       .map((p) => p.trim())
@@ -828,6 +837,10 @@ export function WorkspaceApp({
 
   async function removeDoc() {
     if (!active) return;
+    if (githubReadOnly) {
+      setNotice(GITHUB_READ_ONLY_MESSAGE);
+      return;
+    }
     if (!window.confirm(`Supprimer « ${active.title} » et ses enfants ?`))
       return;
     await flushPending();
@@ -837,6 +850,10 @@ export function WorkspaceApp({
 
   async function restoreRev(revisionId: string) {
     if (!active) return;
+    if (githubReadOnly) {
+      setNotice(GITHUB_READ_ONLY_MESSAGE);
+      return;
+    }
     await flushPending();
     const res = await fetch(`/api/documents/${active.id}/restore`, {
       method: "POST",
@@ -903,6 +920,16 @@ export function WorkspaceApp({
     const drag = docs.find((d) => d.id === dragId);
     const drop = docs.find((d) => d.id === dropId);
     if (!drag || (!drop && dropId !== "root")) return;
+    const githubSpace = payload.space.importSource?.provider === "github";
+    if (githubSpace && isGitHubImportedDocument(payload.space, drag)) return;
+    if (
+      githubSpace &&
+      drop &&
+      isGitHubImportedDocument(payload.space, drop) &&
+      !(position === "inside" && drop.kind === "category")
+    ) {
+      return;
+    }
     const parentId =
       dropId === "root"
         ? null
@@ -915,7 +942,8 @@ export function WorkspaceApp({
           d.parentId === parentId &&
           d.id !== dragId &&
           d.locale === drag.locale &&
-          (parentId !== null || docSection(d) === docSection(drag)),
+          (parentId !== null || docSection(d) === docSection(drag)) &&
+          (!githubSpace || !isGitHubImportedDocument(payload.space, d)),
       )
       .sort((a, b) => a.position - b.position);
     let insertAt = siblings.findIndex((d) => d.id === dropId);
@@ -935,6 +963,10 @@ export function WorkspaceApp({
       }),
     });
     const data = await res.json();
+    if (!res.ok) {
+      setNotice(data.error || "Déplacement impossible.");
+      return;
+    }
     documentVersions.current = new Map(
       data.documents.map((d: DocumentRecord) => [d.id, d.updatedAt]),
     );
@@ -1174,7 +1206,9 @@ export function WorkspaceApp({
 
       <div className="flex-1 overflow-auto p-2">
         <p className="mb-1 px-2 text-[10px] text-[var(--ink-faint)]">
-          Classement : glisser ou Plus → Déplacer
+          {payload.space.importSource?.provider === "github"
+            ? "L’ordre GitHub suit le dépôt ; les pages locales se déplacent entre elles."
+            : "Classement : glisser ou Plus → Déplacer"}
         </p>
         {tree.length === 0 ? (
           <p className="px-2 text-sm text-[var(--ink-faint)]">
@@ -1191,6 +1225,13 @@ export function WorkspaceApp({
             linkMode="button"
             onSelect={selectDocument}
             onReorder={(a, b, pos) => void onReorder(a, b, pos)}
+            canReorder={(node) =>
+              !isGitHubImportedDocument(payload.space, node)
+            }
+            canDrop={(node, pos) =>
+              !isGitHubImportedDocument(payload.space, node) ||
+              (pos === "inside" && node.kind === "category")
+            }
           />
         )}
       </div>
@@ -1214,6 +1255,7 @@ export function WorkspaceApp({
       onAddComment={(body) => void addComment(body)}
       onToggleComment={(id, resolved) => void toggleComment(id, resolved)}
       onPatchDocument={(patch) => void patchActive(patch)}
+      readOnlyDocument={githubReadOnly}
       onJumpToHeading={jumpToHeading}
       onInsertAiText={insertAiText}
     />
@@ -1417,7 +1459,7 @@ export function WorkspaceApp({
                     aria-label="Titre du document"
                     className="w-full bg-transparent font-[family-name:var(--font-display)] text-2xl tracking-tight"
                     value={active.title}
-                    disabled={preview || readingMode}
+                    disabled={preview || readingMode || githubReadOnly}
                     onChange={(e) => {
                       const title = e.target.value;
                       setPayload((prev) => ({
@@ -1429,6 +1471,16 @@ export function WorkspaceApp({
                     }}
                     onBlur={() => void patchActive({ title: active.title })}
                   />
+                  {githubReadOnly ? (
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      className="mt-1 text-xs text-[var(--ink-muted)]"
+                    >
+                      Importé depuis GitHub · lecture seule. Modifiez le fichier
+                      dans le dépôt.
+                    </p>
+                  ) : null}
                   <p className="text-xs text-[var(--ink-faint)]">
                     {active.kind === "category" ? "Catégorie" : "Page"}
                     {active.hidden ? " · masquée du site" : ""}
@@ -1445,7 +1497,7 @@ export function WorkspaceApp({
                       <input
                         type="date"
                         value={active.date ?? ""}
-                        disabled={preview || readingMode}
+                        disabled={preview || readingMode || githubReadOnly}
                         onChange={(e) =>
                           void patchActive({ date: e.target.value || null })
                         }
@@ -1501,62 +1553,66 @@ export function WorkspaceApp({
                       aria-label="Actions du document"
                       className="document-menu absolute right-0 top-full z-30 mt-2 max-h-80 w-64 overflow-auto rounded-md border border-[var(--line)] bg-[var(--surface)] py-1 text-sm shadow-lg"
                     >
-                      <button
-                        type="button"
-                        className="block w-full px-3 py-2 text-left hover:bg-[var(--surface-hover)]"
-                        onClick={() => {
-                          setMoveTarget("root");
-                          setMovePosition("after");
-                          setMenuOpen(false);
-                          setMoveOpen(true);
-                        }}
-                      >
-                        Déplacer…
-                      </button>
-                      <button
-                        type="button"
-                        className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
-                        onClick={() => {
-                          void patchActive({ kind: "page" });
-                          setMenuOpen(false);
-                        }}
-                      >
-                        Convertir en page
-                      </button>
-                      <button
-                        type="button"
-                        className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
-                        onClick={() => {
-                          void patchActive({ kind: "category" });
-                          setMenuOpen(false);
-                        }}
-                      >
-                        Convertir en catégorie
-                      </button>
-                      <button
-                        type="button"
-                        className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
-                        onClick={() => {
-                          void patchActive({ hidden: !active.hidden });
-                          setMenuOpen(false);
-                        }}
-                      >
-                        {active.hidden
-                          ? "Afficher sur le site"
-                          : "Masquer du site"}
-                      </button>
-                      {DOC_SECTIONS.filter(
-                        (t) => t.id !== docSection(active),
-                      ).map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
-                          onClick={() => void moveToSection(t.id)}
-                        >
-                          Déplacer vers l’onglet {t.label}
-                        </button>
-                      ))}
+                      {!githubReadOnly ? (
+                        <>
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-2 text-left hover:bg-[var(--surface-hover)]"
+                            onClick={() => {
+                              setMoveTarget("root");
+                              setMovePosition("after");
+                              setMenuOpen(false);
+                              setMoveOpen(true);
+                            }}
+                          >
+                            Déplacer…
+                          </button>
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
+                            onClick={() => {
+                              void patchActive({ kind: "page" });
+                              setMenuOpen(false);
+                            }}
+                          >
+                            Convertir en page
+                          </button>
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
+                            onClick={() => {
+                              void patchActive({ kind: "category" });
+                              setMenuOpen(false);
+                            }}
+                          >
+                            Convertir en catégorie
+                          </button>
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
+                            onClick={() => {
+                              void patchActive({ hidden: !active.hidden });
+                              setMenuOpen(false);
+                            }}
+                          >
+                            {active.hidden
+                              ? "Afficher sur le site"
+                              : "Masquer du site"}
+                          </button>
+                          {DOC_SECTIONS.filter(
+                            (t) => t.id !== docSection(active),
+                          ).map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
+                              onClick={() => void moveToSection(t.id)}
+                            >
+                              Déplacer vers l’onglet {t.label}
+                            </button>
+                          ))}
+                        </>
+                      ) : null}
                       <button
                         type="button"
                         className="block w-full px-3 py-1.5 text-left hover:bg-[var(--surface-hover)]"
@@ -1576,35 +1632,39 @@ export function WorkspaceApp({
                             Traduire en {l}
                           </button>
                         ))}
-                      <button
-                        type="button"
-                        className="block w-full px-3 py-1.5 text-left text-[var(--danger)] hover:bg-[var(--surface-hover)]"
-                        onClick={() => void removeDoc()}
-                      >
-                        Supprimer
-                      </button>
-                      <div className="my-1 border-t border-[var(--line)]" />
-                      <p className="px-3 py-1 text-[10px] uppercase text-[var(--ink-faint)]">
-                        Historique
-                      </p>
-                      {revisions.slice(0, 8).map((r) => (
-                        <button
-                          key={r.id}
-                          type="button"
-                          className="block w-full px-3 py-1 text-left text-xs text-[var(--ink-muted)] hover:bg-[var(--surface-hover)]"
-                          onClick={() => void restoreRev(r.id)}
-                        >
-                          Restaurer ·{" "}
-                          {formatDistanceToNow(new Date(r.createdAt), {
-                            addSuffix: true,
-                            locale: fr,
-                          })}
-                        </button>
-                      ))}
-                      {revisions.length === 0 ? (
-                        <div className="px-3 py-1 text-xs text-[var(--ink-faint)]">
-                          Aucune révision
-                        </div>
+                      {!githubReadOnly ? (
+                        <>
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-1.5 text-left text-[var(--danger)] hover:bg-[var(--surface-hover)]"
+                            onClick={() => void removeDoc()}
+                          >
+                            Supprimer
+                          </button>
+                          <div className="my-1 border-t border-[var(--line)]" />
+                          <p className="px-3 py-1 text-[10px] uppercase text-[var(--ink-faint)]">
+                            Historique
+                          </p>
+                          {revisions.slice(0, 8).map((r) => (
+                            <button
+                              key={r.id}
+                              type="button"
+                              className="block w-full px-3 py-1 text-left text-xs text-[var(--ink-muted)] hover:bg-[var(--surface-hover)]"
+                              onClick={() => void restoreRev(r.id)}
+                            >
+                              Restaurer ·{" "}
+                              {formatDistanceToNow(new Date(r.createdAt), {
+                                addSuffix: true,
+                                locale: fr,
+                              })}
+                            </button>
+                          ))}
+                          {revisions.length === 0 ? (
+                            <div className="px-3 py-1 text-xs text-[var(--ink-faint)]">
+                              Aucune révision
+                            </div>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
                   ) : null}
@@ -1624,8 +1684,8 @@ export function WorkspaceApp({
                     key={active.id}
                     documentId={active.id}
                     content={editorContent}
-                    editable={!preview && !readingMode}
-                    showToolbar={!preview && !readingMode}
+                    editable={!preview && !readingMode && !githubReadOnly}
+                    showToolbar={!preview && !readingMode && !githubReadOnly}
                     onChange={onEditorChange}
                     locale={locale}
                   />

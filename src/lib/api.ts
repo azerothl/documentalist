@@ -3,6 +3,7 @@ import { z } from "zod";
 import { currentUser } from "./auth";
 import { audit, rateLimit } from "./database";
 import { clientData } from "./secrets";
+import { GitHubReadOnlyDocumentError } from "./document-access";
 import {
   documentPatchSchema,
   spacePatchSchema,
@@ -241,7 +242,12 @@ export function secureRoute<A extends unknown[]>(
       return NextResponse.json(
         { error: message },
         {
-          status: message.includes("Conflit") ? 409 : 400,
+          status:
+            error instanceof GitHubReadOnlyDocumentError
+              ? 403
+              : message.includes("Conflit")
+                ? 409
+                : 400,
           headers: { "Cache-Control": "no-store" },
         },
       );

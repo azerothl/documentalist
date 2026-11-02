@@ -17,6 +17,11 @@ type Props = {
     dropId: string,
     position: "before" | "after" | "inside",
   ) => void;
+  canReorder?: (node: DocTreeNode) => boolean;
+  canDrop?: (
+    node: DocTreeNode,
+    position: "before" | "after" | "inside",
+  ) => boolean;
 };
 
 export function DocTree({
@@ -28,6 +33,8 @@ export function DocTree({
   onNavigate,
   linkMode = "router",
   onReorder,
+  canReorder,
+  canDrop,
 }: Props) {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
@@ -45,6 +52,16 @@ export function DocTree({
               ? `↗ ${node.title}`
               : node.title;
         const hiddenMark = node.hidden ? " · masquée" : "";
+        const sourceMark =
+          canReorder?.(node) === false ? (
+            <span
+              className="ml-1 text-[10px] font-normal text-[var(--ink-faint)]"
+              title="Importé depuis GitHub, lecture seule"
+              aria-hidden="true"
+            >
+              GitHub · lecture seule
+            </span>
+          ) : null;
 
         const className = [
           "doc-tree-link block min-h-9 w-full break-words rounded-md px-2 py-2 text-left text-sm leading-snug",
@@ -58,9 +75,12 @@ export function DocTree({
         return (
           <li
             key={node.id}
-            draggable={Boolean(onReorder)}
+            draggable={Boolean(onReorder && (canReorder?.(node) ?? true))}
             onDragStart={(e) => {
-              if (!onReorder) return;
+              if (!onReorder || canReorder?.(node) === false) {
+                e.preventDefault();
+                return;
+              }
               e.stopPropagation();
               e.dataTransfer.setData("text/doc-id", node.id);
               e.dataTransfer.effectAllowed = "move";
@@ -93,6 +113,7 @@ export function DocTree({
                   : y < rect.height / 2
                     ? "before"
                     : "after";
+              if (canDrop && !canDrop(node, position)) return;
               onReorder(dragId, node.id, position);
             }}
           >
@@ -104,6 +125,7 @@ export function DocTree({
                 onClick={() => onSelect?.(node.id)}
               >
                 {label}
+                {sourceMark}
                 {hiddenMark ? (
                   <span className="text-sm text-[var(--ink-faint)]">
                     {hiddenMark}
@@ -119,6 +141,7 @@ export function DocTree({
                 onClick={onNavigate}
               >
                 {label}
+                {sourceMark}
               </a>
             ) : (
               <Link
@@ -128,6 +151,7 @@ export function DocTree({
                 onClick={onNavigate}
               >
                 {label}
+                {sourceMark}
               </Link>
             )}
             {node.children.length > 0 ? (
@@ -140,6 +164,8 @@ export function DocTree({
                 onNavigate={onNavigate}
                 linkMode={linkMode}
                 onReorder={onReorder}
+                canReorder={canReorder}
+                canDrop={canDrop}
               />
             ) : null}
           </li>

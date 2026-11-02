@@ -93,7 +93,6 @@ export const documentPatchSchema = z.object({
   tags: z.array(z.string().max(80)).max(50).optional(),
   locale: locale.optional(),
   translationOf: z.string().nullable().optional(),
-  sourcePath: z.string().nullable().optional(),
   section: z.enum(["learn", "reference", "blog"]).optional(),
   date: z
     .string()
@@ -107,6 +106,9 @@ export const documentPatchSchema = z.object({
   seoTitle: z.string().max(500).nullable().optional(),
   seoDescription: z.string().max(5000).nullable().optional(),
 });
+const documentRecordSchema = documentPatchSchema.extend({
+  sourcePath: z.string().nullable().optional(),
+});
 
 export function validateDocumentTree(
   documents: DocumentRecord[],
@@ -115,7 +117,7 @@ export function validateDocumentTree(
   const byId = new Map(documents.map((d) => [d.id, d]));
   const slugs = new Set<string>();
   for (const d of documents) {
-    documentPatchSchema.parse(d);
+    documentRecordSchema.parse(d);
     if (!spaces.some((s) => s.id === d.spaceId))
       throw new Error("Espace introuvable.");
     const siblingsKey = `${d.spaceId}:${d.parentId}:${d.locale}:${d.slug}`;
