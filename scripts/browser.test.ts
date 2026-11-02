@@ -351,6 +351,13 @@ test(
           await page
             .getByRole("button", { name: "Publier", exact: true })
             .click();
+          const publishDialog = page.getByRole("dialog", {
+            name: "Publier la documentation",
+          });
+          await publishDialog.getByLabel("Mode d’accès").selectOption("public");
+          await publishDialog
+            .getByRole("button", { name: "Confirmer et publier", exact: true })
+            .click();
           await page
             .getByText("Version publiée à jour", { exact: true })
             .waitFor();
