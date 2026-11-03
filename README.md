@@ -16,11 +16,12 @@ Ouvrir [le compte initial](http://localhost:3000/setup). Le code d’installatio
 - `/login` : connexion, session de 8 heures ;
 - `/app` : rédaction et consultation ;
 - `/team` : comptes, rôles, activité et sauvegardes ;
+- `/mcp` : serveur MCP en lecture seule pour les publications accessibles ;
 - `/p/{slug}` : portail publié, avec les onglets Learn, Reference et Blog (`/p/{slug}/learn/…`, `/p/{slug}/reference/…`, `/p/{slug}/blog/…`), et le choix de version et de langue. Les anciens liens sans onglet ouvrent toujours la page dans Reference.
 
 Pour les réglages d’hébergement, partir de [.env.example](.env.example). `DOCUMENTALIST_URL` doit correspondre à l’URL réellement ouverte par les utilisateurs. En production, utiliser HTTPS ; pour un serveur de production **local sur HTTP**, définir explicitement `DOCUMENTALIST_COOKIE_SECURE=false`.
 
-Les invitations de comptes et les liens magiques nécessitent un relais SMTP. Définir `DOCUMENTALIST_SMTP_URL` et `DOCUMENTALIST_EMAIL_FROM` dans l’environnement du serveur (par exemple dans `/etc/documentalist/production.env` sur la Dedibox). Utiliser `smtps://...:465` ou `smtp://...:587` ; encoder les caractères réservés du nom d’utilisateur et du mot de passe dans l’URL. Les invitations de compte expirent après 24 heures, les liens magiques après 24 heures et les sessions de lecture après 8 heures. OIDC/SSO n’est pas encore inclus.
+Les invitations de comptes et les liens magiques nécessitent un relais SMTP. Définir `DOCUMENTALIST_SMTP_URL` et `DOCUMENTALIST_EMAIL_FROM` dans l’environnement du serveur (par exemple dans `/etc/documentalist/production.env` sur la Dedibox). Utiliser `smtps://...:465` ou `smtp://...:587` ; encoder les caractères réservés du nom d’utilisateur et du mot de passe dans l’URL. Les invitations de compte expirent après 24 heures, les liens de réinitialisation après 1 heure, les liens magiques après 24 heures et les sessions de lecture après 8 heures. Les mots de passe d’équipe contiennent 12 à 256 caractères. OIDC/SSO n’est pas encore inclus. Recréer le conteneur après une modification de son environnement.
 
 ```sh
 npm run build
@@ -69,6 +70,8 @@ Le code d’installation du premier compte administrateur est créé dans `/data
 
 Le workflow `.github/workflows/deploy-production.yml` se déclenche après chaque push sur `main`. Il se connecte à la Dedibox avec une clé Actions dédiée, puis le serveur récupère `main`, reconstruit l’image et remplace le conteneur après une compilation réussie.
 
+Le workflow de déploiement et le workflow de vérifications sont indépendants : une fusion déclenche les deux, sans attente de la CI de `main` par le déploiement. Vérifier les contrôles de la PR avant fusion puis consulter les deux résultats après fusion. Un déploiement réussi doit être complété par une lecture réelle du portail et, si utilisé, une connexion MCP ; une simple requête GET sur `/mcp` renvoie normalement 405.
+
 Le workflow reste inactif tant que la variable Actions `DOCUMENTALIST_DEPLOY_ENABLED` n’est pas égale à `true`. Une fois le bootstrap terminé, définir cette variable à `true` et lancer le workflow manuellement pour le premier déploiement ; les pushes suivants sur `main` déploient automatiquement.
 
 Le dépôt utilise ces secrets Actions : `DOCUMENTALIST_DEPLOY_HOST`, `DOCUMENTALIST_DEPLOY_USER`, `DOCUMENTALIST_DEPLOY_SSH_PRIVATE_KEY` et `DOCUMENTALIST_DEPLOY_SSH_KNOWN_HOSTS`. Le bootstrap installe la clé publique correspondante dans le compte `agent-deploy`; la clé privée doit rester dans le secret GitHub. La valeur de `DOCUMENTALIST_DEPLOY_SSH_KNOWN_HOSTS` doit contenir la clé SSH de la Dedibox vérifiée, avec l’adresse IP utilisée par `DOCUMENTALIST_DEPLOY_HOST`.
@@ -82,7 +85,7 @@ La compilation utilise webpack et un correctif ciblé pour les volumes Windows q
 | Espaces et arborescence | Pages, catégories, liens, glisser-déposer, détection des cycles et des slugs en double                                                                                                                                            |
 | Édition                 | Blocs `/`, tableaux, tâches, images par URL, encadrés, coloration du code et aperçu                                                                                                                                               |
 | Sauvegarde              | File de sauvegarde par document, attente avant publication, alerte si la page est quittée avant enregistrement, révisions restaurables                                                                                            |
-| Publication             | Instantané des documents et variables, pages masquées exclues côté serveur ; choix public, code partagé ou lien magique nominatif ; retrait possible du portail public                                                              |
+| Publication             | Instantané des documents et variables, pages masquées exclues côté serveur ; choix public, code partagé ou lien magique nominatif ; espaces privés absents du répertoire public                                                              |
 | Portail                 | Onglets Learn, Reference et Blog, interface française ou anglaise selon la langue sélectionnée (repli français), dates localisées, lecture sans TipTap, sommaire, recherche (Ctrl K), menu mobile et versions                         |
 | Accès                   | Administrateur, rédacteur et lecteur ; invitations d’équipe par courriel ; portails publics, par code ou réservés aux adresses invitées ; vérification côté serveur et cookies HttpOnly                                            |
 | IA                      | Question, rédaction et correction sur le contexte de la page avec OpenAI, Anthropic ou une API compatible                                                                                                                         |
@@ -97,7 +100,53 @@ Les intégrations sont accessibles aux administrateurs dans Outils → Intégrat
 
 Dans un espace lié à GitHub, les pages et catégories qui proviennent des dossiers importés sont en lecture seule dans l’espace de rédaction. Modifiez-les dans le dépôt, puis relancez la synchronisation. Les pages créées directement dans Documentalist restent modifiables et sont rangées après les pages importées. Détacher la source arrête la synchronisation et permet d’éditer l’espace comme une copie locale.
 
-Les lecteurs disposent d’une vue en lecture seule, y compris pour les documents non publiés. Les rédacteurs peuvent modifier et publier tous les espaces. Les administrateurs gèrent aussi les secrets, les accès et les comptes. Les droits sont vérifiés par le serveur, sans dépendre des boutons de l’interface. Les commentaires utilisent le nom du compte connecté.
+Les lecteurs disposent d’une vue en lecture seule, y compris pour les documents non publiés de leurs espaces autorisés. Les rédacteurs modifient et publient dans leurs espaces autorisés, sous réserve du verrouillage des imports GitHub. Les administrateurs disposent d’un accès global et gèrent aussi les secrets, intégrations et comptes. Les droits sont vérifiés par le serveur, sans dépendre des boutons de l’interface. Les commentaires utilisent le nom du compte connecté et ne sont pas publiés.
+
+### Comptes, portée des espaces et lecteurs du portail
+
+Dans `/team`, un administrateur peut inviter par courriel, choisir le rôle et une portée « Tous les espaces » ou « Espaces sélectionnés », puis ajuster ces droits après création. Une sélection contient au moins un espace. Les comptes existants ont conservé leur portée globale lors de la migration ; les nouvelles invitations proposent une portée sélectionnée. Un nouvel espace ou une nouvelle version n’est pas ajouté automatiquement à une portée sélectionnée.
+
+| Action | Administrateur | Rédacteur | Lecteur d’équipe |
+| --- | --- | --- | --- |
+| Consulter les brouillons | Tous les espaces | Espaces autorisés | Espaces autorisés |
+| Modifier, commenter, importer, publier | Oui | Dans les espaces autorisés | Non |
+| Créer un espace ou une version | Oui | Seulement avec portée globale | Non |
+| Régler espace/IA, gérer intégrations et comptes | Oui | Non | Non |
+| Créer ou révoquer une connexion MCP | Oui | Non | Non |
+| Modifier une page importée GitHub | Non, modifier la source | Non, modifier la source | Non |
+
+Une invitation d’équipe permet l’accès à `/app` et éventuellement aux brouillons. Pour une lecture uniquement publiée, configurez un portail privé avec code ou lien magique ; cela ne crée pas de compte d’équipe. Les adresses invitées sont propres à l’espace. Les clés MCP constituent une autre autorisation, limitée aux publications des espaces cochés et aux droits actuels du compte associé. Une documentation publique reste lisible sans compte.
+
+Pour les liens magiques : choisir le mode dans Paramètres, enregistrer, utiliser « Inviter et envoyer le lien » pour au moins une adresse, puis confirmer ce mode dans Publier. « Retirer l’accès » révoque les liens et sessions de cette adresse pour ce portail. Cela ne révoque pas un compte d’équipe ou une clé MCP distincts. Désactiver un compte d’équipe bloque son authentification et ses connexions MCP. Conserver au moins un administrateur actif dont le mot de passe est défini.
+
+## Documentation intégrée et parcours Learn
+
+L’espace **Product docs** contient une référence et des guides Learn en anglais et en français. La langue du contenu suit le sélecteur du portail ; les libellés de l’espace de rédaction restent ceux de l’interface actuelle. Les pages de référence existantes gardent leurs identifiants et slugs. L’espace de démonstration **API docs** illustre une API fictive et ne documente pas les routes d’administration de Documentalist.
+
+Les chemins suivants sont relatifs à `/p/product-docs/learn/` ; ajouter `?lang=fr` ou `?lang=en` :
+
+| Parcours | Page |
+| --- | --- |
+| Choisir son parcours | `start-here` |
+| Connexion, invitation et mot de passe | `sign-in` |
+| Création, catégories et classement | `create-a-space` |
+| Blocs, relecture, SEO, commentaires et révisions | `write-and-review` |
+| Publication et contrôle du résultat public | `publish-public` |
+| Accès par code partagé | `protect-with-code` |
+| Lecteurs invités et liens magiques | `invite-portal-readers` |
+| Équipe, rôles et restrictions par espace | `invite-teammates` |
+| Import et synchronisation GitHub | `github-import` |
+| Fichiers Markdown, GitLab, Notion, OpenAPI et notifications | `other-imports` |
+| Langues et versions | `languages-and-versions` |
+| Configuration et utilisation de l’IA | `use-ai` |
+| Connexion d’un agent, clés et contrôle des restrictions | `connect-an-agent` |
+| Recherche, lecture, apparence et mobile | `read-and-navigate` |
+| Révisions, sauvegardes et récupération | `back-up-and-restore` |
+| SMTP, exploitation et vérifications de déploiement | `operate-the-platform` |
+
+La référence décrit aussi les limites : traduction par copie et non automatique, synchronisation depuis un espace ouvert et non par tâche serveur permanente, variables/modèles/extraits sans éditeur de gestion complet, et absence d’OAuth interactif pour MCP. En mode Question, l’IA classe actuellement des extraits de l’espace courant ; le choix « Page » ne constitue pas une garantie d’isolation à cette seule page.
+
+Les sources et règles de mise à jour du guide sont décrites dans [la maintenance documentaire](docs/documentation-maintenance.md). La mise à jour automatique rafraîchit uniquement les pages officielles de Product docs et conserve les instantanés publiés des autres pages ; elle n’insère pas leurs brouillons dans le portail. Elle ne crée pas de publication si cet espace n’était pas publié.
 
 ## Onglets Learn, Reference et Blog
 
@@ -140,6 +189,16 @@ Depuis `/team`, un administrateur peut télécharger une sauvegarde complète. P
 ```sh
 npm run data:backup
 ```
+
+Cette commande demande le dépôt source et ses dépendances de développement, dont `tsx`, avec `DOCUMENTALIST_DATA_DIR` correspondant aux données à sauvegarder. L’image Docker de production n’embarque pas ce script. Dans le conteneur, utiliser le téléchargement depuis `/team`, ou l’API de sauvegarde native SQLite avec la commande suivante sur la Dedibox :
+
+```sh
+sudo docker compose --project-directory /home/azerothl/documentalist \
+  -f /home/azerothl/documentalist/compose.yaml exec -T documentalist \
+  node -e 'const fs=require("node:fs"),p=require("node:path"),D=require("better-sqlite3");const root=process.env.DOCUMENTALIST_DATA_DIR;const folder=p.join(root,"backups");fs.mkdirSync(folder,{recursive:true});const db=new D(p.join(root,"documentalist.sqlite"),{readonly:true});const file=p.join(folder,"documentalist-"+Date.now()+".sqlite");db.backup(file).then(()=>{db.close();console.log(file)}).catch(()=>{db.close();process.exitCode=1})'
+```
+
+Le volume hôte `/data/documentalist` est monté dans `/srv/data` dans le conteneur. La sauvegarde ci-dessus se trouve donc dans `/data/documentalist/backups` sur l’hôte et utilise l’API SQLite pour rester cohérente avec les écritures en cours. Elle ne remplace pas la copie protégée de la clé de chiffrement.
 
 Conserver les sauvegardes **et la clé** séparément avec des droits d’accès adaptés. Pour une restauration complète, arrêter le serveur, sauvegarder les fichiers actuels, remplacer `documentalist.sqlite` par la sauvegarde, retirer ses anciens fichiers `-wal` et `-shm`, puis redémarrer avec la même clé. La restauration d’un état depuis l’interface conserve les comptes et le journal.
 

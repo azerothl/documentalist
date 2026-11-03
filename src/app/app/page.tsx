@@ -1,8 +1,8 @@
 import { clientData } from "@/lib/secrets";
 import { WorkspaceApp } from "@/components/WorkspaceApp";
 import { listSpaces, getWorkspacePayload } from "@/lib/store";
-import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { notFound, redirect } from "next/navigation";
+import { canAccessSpace, requireUser } from "@/lib/auth";
 import { PortalView } from "@/components/PortalView";
 import { isSection } from "@/lib/sections";
 
@@ -20,11 +20,24 @@ export default async function AppPage({
 }) {
   const query = await searchParams;
   const user = await requireUser();
-  const spaces = await listSpaces();
-  const first = spaces.find((s) => s.id === query.space) ?? spaces[0];
+  const spaces = (await listSpaces()).filter((space) =>
+    canAccessSpace(user, space.id),
+  );
+  const first = query.space
+    ? spaces.find((s) => s.id === query.space)
+    : spaces[0];
+  if (query.space && !first) notFound();
   if (!first) redirect("/");
   const payload = await getWorkspacePayload(first.id);
   if (!payload) redirect("/");
+  payload.spaces = payload.spaces.filter((space) =>
+    canAccessSpace(user, space.id),
+  );
+  payload.versionSpaces = payload.versionSpaces.filter((space) =>
+    canAccessSpace(user, space.id),
+  );
+  if (user.role !== "admin" && user.spaceScope === "selected")
+    payload.integrations = [];
   const requestedDocument = payload.documents.find((d) => d.id === query.doc);
   const locale = payload.space.locales.includes(query.lang ?? "")
     ? query.lang!

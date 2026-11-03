@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { repairTipTapDoc } from "./markdown";
-import { ensureProductGuide } from "./product-guide";
+import { ensureProductGuide, productGuideDocumentIds } from "./product-guide";
 import { isValidSlug, uniqueSlug } from "./slug";
 import { richDoc } from "./tiptap-text";
 import type { LlmSettings, SpaceImportSource, StoreData } from "./types";
@@ -236,8 +236,16 @@ export function migrateStore(data: StoreData): StoreData {
       data.spaces.find((s) => s.slug === "product-docs");
     if (productSpace?.publishedSnapshot) {
       productSpace.publishedSnapshot = {
+        ...productSpace.publishedSnapshot,
         publishedAt: new Date().toISOString(),
-        documents: data.documents.filter((d) => d.spaceId === productSpace.id),
+        documents: [
+          ...productSpace.publishedSnapshot.documents.filter(
+            (d) => !productGuideDocumentIds.has(d.id),
+          ),
+          ...data.documents.filter(
+            (d) => d.spaceId === productSpace.id && productGuideDocumentIds.has(d.id),
+          ),
+        ],
       };
       productSpace.publishedAt = productSpace.publishedSnapshot.publishedAt;
     }
