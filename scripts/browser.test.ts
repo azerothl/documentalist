@@ -312,6 +312,7 @@ test(
           ).json();
           assert.equal(data.document.parentId, null);
           await page
+            .getByRole("navigation", { name: "Documents de l’espace" })
             .getByRole("button", { name: "Welcome", exact: true })
             .click();
         },
@@ -320,6 +321,7 @@ test(
         "sauvegarde lors d’un changement de page et publication",
         async () => {
           await page
+            .getByRole("navigation", { name: "Documents de l’espace" })
             .getByRole("button", { name: "Welcome", exact: true })
             .click();
           await page
@@ -634,7 +636,7 @@ test(
         "menu mobile, recherche sans résultat et page de lecture",
         async () => {
           await page.setViewportSize({ width: 390, height: 844 });
-          await page.goto(origin + "/p/product-docs");
+          await page.goto(origin + "/p/product-docs/reference?lang=en");
           await page
             .getByRole("button", { name: "Documents", exact: true })
             .click();
@@ -663,6 +665,14 @@ test(
           );
         },
       );
+      await t.test("Learn : guides détaillés en français et anglais", async () => {
+        for (const [locale, title] of [["fr", "Connecter un agent externe"], ["en", "Connect an external agent"]]) {
+          await page.goto(origin + "/p/product-docs/learn/connect-an-agent?lang=" + locale);
+          await page.getByRole("heading", { name: title, exact: true }).waitFor();
+          assert.ok(await page.locator("main ol").count() > 0);
+          assert.equal(await page.locator('[contenteditable="true"]').count(), 0);
+        }
+      });
       await t.test("MCP : création, affichage unique et révocation depuis l’équipe", async () => {
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(origin + "/team");

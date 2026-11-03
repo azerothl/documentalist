@@ -43,7 +43,7 @@ export function createSeedStore(): StoreData {
         { type: "heading", level: 1, text: "API reference" },
         {
           type: "paragraph",
-          text: "Second Space showing multi-product navigation — separate portals per Space.",
+          text: "Illustrative documentation for a fictional API, showing multi-product navigation. These example routes are not Documentalist administration endpoints.",
         },
       ]),
     },
@@ -70,7 +70,7 @@ export function createSeedStore(): StoreData {
         { type: "heading", level: 1, text: "Authentication" },
         {
           type: "paragraph",
-          text: "Send an API key in the Authorization header.",
+          text: "Fictional API example: send an API key in the Authorization header. Documentalist workspace APIs use a team session; only its MCP endpoint accepts dedicated MCP Bearer keys.",
         },
         {
           type: "code",
@@ -184,7 +184,7 @@ export function createSeedStore(): StoreData {
         id: nanoid(10),
         orgId,
         name: "Need help callout",
-        body: "Need help? Email {{support_email}} or open a ticket in the portal.",
+        body: "Need help? Contact the documentation maintainer at {{support_email}}.",
       },
     ],
     templates: [],

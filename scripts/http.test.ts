@@ -118,6 +118,18 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
       assert.match(header, /SameSite=lax/i);
       cookie = header.split(";")[0];
     });
+    await t.test("guide publié : Learn et anciens liens Reference en français et anglais", async () => {
+      for (const [url, title] of [
+        ["/p/product-docs/reference/getting-started/core-concepts?lang=en", "Core concepts"],
+        ["/p/product-docs/reference/getting-started/core-concepts?lang=fr", "Concepts"],
+        ["/p/product-docs/learn/connect-an-agent?lang=en", "Connect an external agent"],
+        ["/p/product-docs/learn/connect-an-agent?lang=fr", "Connecter un agent externe"],
+      ]) {
+        const response = await request(url, "GET", undefined, "");
+        assert.equal(response.status, 200, url);
+        assert.ok((await response.text()).includes(title), url);
+      }
+    });
     let spaceId = "";
     let slug = "";
     let documentId = "";
@@ -347,6 +359,15 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
       await json(`/api/spaces/${privateSpace.id}/publish`, "POST", { accessMode: "password", accessPassword: "private-mcp-test-code" });
       await json(`/api/documents/${published.id}`, "PATCH", { content: content("UNPUBLISHED_MCP_DRAFT") });
       const member = (await json("/api/admin/team", "POST", { email: "mcp-reader@example.org", name: "MCP reader", role: "viewer", password: "long-mcp-reader-password", spaceScope: "selected", spaceIds: [privateSpace.id] })).user;
+      const login = await request("/api/auth/login", "POST", { email: "mcp-reader@example.org", password: "long-mcp-reader-password" });
+      const memberSession = login.headers.get("set-cookie")!.split(";")[0];
+      for (const role of ["viewer", "editor"]) {
+        await json("/api/admin/team", "PATCH", { id: member.id, role });
+        const workspace = await request(`/app?space=${privateSpace.id}`, "GET", undefined, memberSession);
+        assert.equal(workspace.status, 200);
+        assert.ok(!(await workspace.text()).includes(publicSpace.id), "le rendu serveur ne doit pas exposer les autres espaces");
+        assert.equal((await request(`/app?space=${publicSpace.id}`, "GET", undefined, memberSession)).status, 404);
+      }
       assert.equal((await request("/api/mcp/connections", "POST", { name: "Invalid scope", userId: member.id, spaceIds: [publicSpace.id] })).status, 400);
       const connection = await json("/api/mcp/connections", "POST", { name: "Test agent", userId: member.id, spaceIds: [privateSpace.id], days: 1 });
       const list = await json("/api/mcp/connections");

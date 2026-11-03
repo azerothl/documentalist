@@ -7,7 +7,7 @@
     "build": "node --require ./scripts/windows-readlink.cjs node_modules/next/dist/bin/next build --webpack",
     "start": "node --require ./scripts/windows-readlink.cjs node_modules/next/dist/bin/next start",
     "lint": "eslint",
-    "test": "tsx --test scripts/security.test.ts scripts/ui.test.ts scripts/import-order.test.ts scripts/sections.test.ts",
+    "test": "tsx --test scripts/security.test.ts scripts/ui.test.ts scripts/import-order.test.ts scripts/sections.test.ts scripts/product-guide.test.ts",
     "test:http": "tsx --test scripts/http.test.ts",
     "typecheck": "tsc --noEmit",
     "data:backup": "tsx scripts/backup.ts",
