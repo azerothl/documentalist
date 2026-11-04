@@ -10,7 +10,7 @@ import {
   hashPassword,
 } from "@/lib/auth";
 import { emailIsConfigured, sendAccountLink } from "@/lib/email";
-import { listSpaces } from "@/lib/store";
+import { eraseUserData, listSpaces } from "@/lib/store";
 import type { SpaceScope } from "@/lib/auth";
 const role = z.enum(["admin", "editor", "viewer"]);
 const spaceScope = z.enum(["all", "selected"]);
@@ -189,6 +189,59 @@ export const PATCH = secureRoute(
         db.prepare("DELETE FROM account_tokens WHERE user_id=?").run(body.id);
       }
     })();
+    return NextResponse.json({ ok: true });
+  },
+  { admin: true },
+);
+
+export const DELETE = secureRoute(
+  async (request) => {
+    const actor = await currentUser();
+    const body = z
+      .object({ id: z.string().min(1), confirmation: z.string().email().max(254) })
+      .parse(await request.json());
+    if (actor?.id === body.id)
+      return NextResponse.json(
+        { error: "Utilisez la suppression de votre compte dans vos réglages." },
+        { status: 400 },
+      );
+    const db = database();
+    const target = db
+      .prepare("SELECT id,email,role,disabled,password_set FROM users WHERE id=?")
+      .get(body.id) as
+      | {
+          id: string;
+          email: string;
+          role: string;
+          disabled: number;
+          password_set: number;
+        }
+      | undefined;
+    if (!target)
+      return NextResponse.json(
+        { error: "Compte introuvable." },
+        { status: 404 },
+      );
+    if (target.email.toLowerCase() !== body.confirmation.trim().toLowerCase())
+      return NextResponse.json(
+        { error: "L’adresse saisie ne correspond pas à ce compte." },
+        { status: 400 },
+      );
+    if (
+      target.role === "admin" &&
+      !target.disabled &&
+      target.password_set &&
+      (db
+        .prepare(
+          "SELECT count(*) AS count FROM users WHERE role='admin' AND disabled=0 AND password_set=1",
+        )
+        .get() as { count: number }).count <= 1
+    )
+      return NextResponse.json(
+        { error: "Conservez un autre administrateur actif avant de supprimer ce compte." },
+        { status: 409 },
+      );
+    await eraseUserData(target.id);
     return NextResponse.json({ ok: true });
   },
   { admin: true },

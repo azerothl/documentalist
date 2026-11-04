@@ -172,17 +172,21 @@ Les couleurs personnalisées d’un espace sont ajustées à l’affichage pour 
 
 Un parcours ciblé a également été vérifié le 1er novembre 2026 avec NVDA 2026.3 et Microsoft Edge sous Windows : 21 étapes couvrant l’éditeur, les préférences, le focus, la recherche, les onglets, les commentaires et la lecture du portail. Les libellés des tâches ont été associés par des éléments `label` natifs pour éviter leur répétition en lecture continue ; les liens de page précédente et suivante disposent d’un nom explicite. Le menu documentaire a aussi été vérifié avec une fenêtre de 390 px de large sur ordinateur.
 
-## Données et sauvegardes
+## Données, sauvegardes et confidentialité
 
 Au premier accès, l’ancien `data/store.json` est migré sans réinitialisation silencieuse : son contenu est conservé dans `legacy-backup.enc`, puis le fichier en clair est retiré. Un fichier invalide provoque une erreur explicite.
 
-- `documentalist.sqlite` : état chiffré AES-256-GCM, comptes, sessions et activité ;
+- `documentalist.sqlite` : état documentaire chiffré AES-256-GCM ; les comptes, sessions, empreintes d’accès et journaux sont des colonnes SQLite distinctes ;
 - `encryption.key` : clé locale si aucune clé externe n’est configurée ;
 - `legacy-backup.enc` : sauvegarde chiffrée des anciennes données ;
-- les 20 états précédents sont conservés dans SQLite et restaurables depuis `/team` ;
-- le journal conserve les 5 000 dernières actions ; les mots de passe utilisent scrypt.
+- jusqu’à 20 états précédents sont conservés dans SQLite pendant 30 jours au maximum et restaurables depuis `/team` ;
+- le journal conserve 5 000 actions au maximum pendant 180 jours au maximum ; les mots de passe utilisent scrypt.
+
+Les fichiers de base et la clé locale sont créés avec des permissions restreintes sur les systèmes compatibles. En production, protégez aussi le volume et les sauvegardes avec les ACL du système, un chiffrement de disque et une séparation des accès. L’application ne chiffre pas les colonnes de comptes, de sessions et d’activité.
 
 Une transaction protège les écritures et une révision empêche les mises à jour concurrentes de s’écraser. Un conflit renvoie une erreur 409 ; recharger avant de réessayer. SQLite doit rester sur un disque local persistant : cette version ne prend pas en charge plusieurs serveurs avec des copies indépendantes de la base, ni la coédition simultanée d’un même texte. L’état documentaire reste une unité JSON chiffrée dans SQLite ; une base relationnelle indexée devient utile pour de grands corpus.
+
+La copie de migration est purgée après 30 jours par défaut. Les sauvegardes locales vieillies sont purgées à la prochaine activité de l’application ; une demande de suppression de compte purge les sauvegardes générées dans le répertoire de données pour éviter de restaurer les mêmes références.
 
 Depuis `/team`, un administrateur peut télécharger une sauvegarde complète. Pour produire aussi un fichier sur le serveur :
 
@@ -195,7 +199,7 @@ Cette commande demande le dépôt source et ses dépendances de développement, 
 ```sh
 sudo docker compose --project-directory /home/azerothl/documentalist \
   -f /home/azerothl/documentalist/compose.yaml exec -T documentalist \
-  node -e 'const fs=require("node:fs"),p=require("node:path"),D=require("better-sqlite3");const root=process.env.DOCUMENTALIST_DATA_DIR;const folder=p.join(root,"backups");fs.mkdirSync(folder,{recursive:true});const db=new D(p.join(root,"documentalist.sqlite"),{readonly:true});const file=p.join(folder,"documentalist-"+Date.now()+".sqlite");db.backup(file).then(()=>{db.close();console.log(file)}).catch(()=>{db.close();process.exitCode=1})'
+  node -e 'const fs=require("node:fs"),p=require("node:path"),D=require("better-sqlite3");const root=process.env.DOCUMENTALIST_DATA_DIR;const folder=p.join(root,"backups");fs.mkdirSync(folder,{recursive:true,mode:0o700});fs.chmodSync(folder,0o700);const db=new D(p.join(root,"documentalist.sqlite"),{readonly:true});const file=p.join(folder,"documentalist-"+Date.now()+".sqlite");db.backup(file).then(()=>{fs.chmodSync(file,0o600);db.close();console.log(file)}).catch(()=>{fs.rmSync(file,{force:true});db.close();process.exitCode=1})'
 ```
 
 Le volume hôte `/data/documentalist` est monté dans `/srv/data` dans le conteneur. La sauvegarde ci-dessus se trouve donc dans `/data/documentalist/backups` sur l’hôte et utilise l’API SQLite pour rester cohérente avec les écritures en cours. Elle ne remplace pas la copie protégée de la clé de chiffrement.
@@ -205,6 +209,10 @@ Conserver les sauvegardes **et la clé** séparément avec des droits d’accès
 Les secrets enregistrés ne sont pas renvoyés en clair au navigateur. Le masque `••••••••` signifie « conserver la valeur » ; remplacer le champ pour changer le secret, ou le vider pour le supprimer. Une nouvelle clé MCP est affichée une seule fois à sa création, puis seule son empreinte est conservée. Le CSS libre a été retiré ; la couleur d’accent reste configurable.
 
 Les requêtes sortantes vérifient les adresses DNS au moment de la connexion, refusent les réseaux privés par défaut, les protocoles dangereux et les redirections ; elles limitent aussi le temps et la taille des réponses. Les exceptions réseau sont configurées uniquement par l’opérateur dans `DOCUMENTALIST_PRIVATE_HOSTS`.
+
+### RGPD : responsabilités de chaque déploiement
+
+La page `/privacy` fournit une notice à compléter ; elle ne peut pas nommer un responsable unique, car Documentalist est un logiciel libre auto-hébergeable. Chaque exploitant doit renseigner les variables `DOCUMENTALIST_PRIVACY_*` dans son environnement, puis vérifier que les informations correspondent à ses usages, son hébergement et ses fournisseurs réels. La marche à suivre, les limites d’effacement dans les contenus partagés et la conservation des copies hors application sont décrites dans [`docs/privacy-operations.md`](docs/privacy-operations.md). Le code apporte des fonctions d’export et d’effacement de compte, mais ne certifie pas à lui seul la conformité d’un déploiement.
 
 ## Accès documentaire des agents avec MCP
 

@@ -638,6 +638,7 @@ export function PortalView({
                 {t.sections[tab.id]}
               </Link>
             ))}
+            <Link href="/privacy">Confidentialité / Privacy</Link>
           </nav>
           <span className="inline-flex items-center gap-2">
             {t.footer.publishedWith}

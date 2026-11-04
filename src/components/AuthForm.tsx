@@ -1,6 +1,7 @@
 "use client";
 import { AppearanceSettings } from "@/components/Appearance";
 import { BrandLogo } from "@/components/BrandLogo";
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -94,6 +95,11 @@ export function AuthForm({ setup = false }: { setup?: boolean }) {
       <div className="mt-4 flex justify-center">
         <AppearanceSettings />
       </div>
+      <p className="mt-4 text-center text-sm">
+        <Link href="/privacy" className="text-[var(--accent)] underline">
+          Confidentialité / Privacy
+        </Link>
+      </p>
     </div>
   );
 }
