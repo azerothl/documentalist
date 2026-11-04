@@ -45,4 +45,4 @@ Ce mécanisme concerne le guide intégré seulement : il ne publie pas les nouve
 - Le mode Question classe les extraits dans l’espace actif ; son sélecteur ne garantit pas un contexte limité à une page.
 - Variables, modèles et extraits ne disposent pas d’un éditeur de gestion complet dans l’interface actuelle.
 - Portail, comptes d’équipe et clés MCP ont des autorisations distinctes. SSO et OAuth MCP interactif ne sont pas implémentés.
-- Déploiement sur main et CI sont des workflows indépendants.
+- Le job de déploiement s’exécute uniquement après la réussite de la CI sur main ; il annule si la branche a avancé, construit le SHA validé et vérifie /login après redémarrage.

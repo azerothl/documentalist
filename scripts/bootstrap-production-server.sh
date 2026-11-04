@@ -108,7 +108,6 @@ if ! grep -Fq '# BEGIN Documentalist' "$CADDYFILE"; then
   fi
 fi
 
-/usr/sbin/runuser -u "$APP_USER" -- /usr/bin/git -C "$APP_DIR" pull --ff-only origin main
 /usr/local/sbin/documentalist-deploy
 
 echo "Déploiement initial terminé. Le code d’installation initial se trouve dans $DATA_DIR/setup-token."
