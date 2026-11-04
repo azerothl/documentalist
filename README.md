@@ -68,11 +68,11 @@ Le code d’installation du premier compte administrateur est créé dans `/data
 
 ### Mises à jour automatiques
 
-Le workflow `.github/workflows/deploy-production.yml` se déclenche après chaque push sur `main`. Il se connecte à la Dedibox avec une clé Actions dédiée, puis le serveur récupère `main`, reconstruit l’image et remplace le conteneur après une compilation réussie.
+Le workflow `.github/workflows/checks.yml` exécute lint, vérification TypeScript, tests unitaires, tests HTTP et navigateur, compilation et audit des dépendances de production. Sur `main`, le déploiement est un second job du même workflow : il ne démarre qu’après la réussite de tous ces contrôles. Le SHA vérifié est transmis par SSH au serveur, qui annule le déploiement si `main` a avancé entre-temps, construit cette version précise et attend que `/login` réponde.
 
-Le workflow de déploiement et le workflow de vérifications sont indépendants : une fusion déclenche les deux, sans attente de la CI de `main` par le déploiement. Vérifier les contrôles de la PR avant fusion puis consulter les deux résultats après fusion. Un déploiement réussi doit être complété par une lecture réelle du portail et, si utilisé, une connexion MCP ; une simple requête GET sur `/mcp` renvoie normalement 405.
+Les PR passent par les mêmes contrôles avant fusion. Après le smoke test de `/login`, vérifier aussi le portail réel et, si utilisé, une connexion MCP ; une simple requête GET sur `/mcp` renvoie normalement 405.
 
-Le workflow reste inactif tant que la variable Actions `DOCUMENTALIST_DEPLOY_ENABLED` n’est pas égale à `true`. Une fois le bootstrap terminé, définir cette variable à `true` et lancer le workflow manuellement pour le premier déploiement ; les pushes suivants sur `main` déploient automatiquement.
+Le job de déploiement reste inactif tant que la variable Actions `DOCUMENTALIST_DEPLOY_ENABLED` n’est pas égale à `true`. Une fois le bootstrap terminé, définir cette variable à `true` et lancer le workflow manuellement sur `main` pour le premier déploiement ; les pushes suivants sur `main` déploient automatiquement après validation.
 
 Le dépôt utilise ces secrets Actions : `DOCUMENTALIST_DEPLOY_HOST`, `DOCUMENTALIST_DEPLOY_USER`, `DOCUMENTALIST_DEPLOY_SSH_PRIVATE_KEY` et `DOCUMENTALIST_DEPLOY_SSH_KNOWN_HOSTS`. Le bootstrap installe la clé publique correspondante dans le compte `agent-deploy`; la clé privée doit rester dans le secret GitHub. La valeur de `DOCUMENTALIST_DEPLOY_SSH_KNOWN_HOSTS` doit contenir la clé SSH de la Dedibox vérifiée, avec l’adresse IP utilisée par `DOCUMENTALIST_DEPLOY_HOST`.
 

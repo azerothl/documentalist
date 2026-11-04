@@ -5,7 +5,7 @@ import type { DocumentRecord } from "./types";
 
 export const PRODUCT_GUIDE_SPACE_ID = "spc_product";
 /** Refresh official guide pages once on existing installations. */
-export const PRODUCT_GUIDE_VERSION = 7;
+export const PRODUCT_GUIDE_VERSION = 8;
 export const productGuidePages = [...referencePages, ...learnPages];
 export const productGuideDocumentIds = new Set(
   productGuidePages.flatMap((page) => [page.id, page.id + "_fr"]),

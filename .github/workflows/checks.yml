@@ -1,7 +1,16 @@
-name: Vérifications
-on: [push, pull_request]
+name: Vérifications et déploiement
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   check:
+    name: Lint, typage, tests et build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -11,9 +20,53 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm test
       - run: npm run build
       - run: npm run test:http
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - run: npm audit --omit=dev
+
+  deploy:
+    name: Déployer sur la Dedibox
+    needs: check
+    if: >-
+      ${{ needs.check.result == 'success' &&
+          vars.DOCUMENTALIST_DEPLOY_ENABLED == 'true' &&
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: documentalist-production
+      cancel-in-progress: false
+    steps:
+      - name: Configurer l’accès SSH avec hôte épinglé
+        shell: bash
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DOCUMENTALIST_DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DOCUMENTALIST_DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/documentalist-deploy"
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/documentalist-deploy" "$HOME/.ssh/known_hosts"
+
+      - name: Déployer le commit vérifié
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DOCUMENTALIST_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DOCUMENTALIST_DEPLOY_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DEPLOY_SHA" | ssh -F /dev/null \
+            -i "$HOME/.ssh/documentalist-deploy" \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ServerAliveInterval=20 \
+            "$DEPLOY_USER@$DEPLOY_HOST"
