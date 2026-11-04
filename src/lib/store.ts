@@ -20,7 +20,7 @@ import { blogDate, cleanRoot, ownsFile } from "./sections";
 import { uniqueSlug, slugify } from "./slug";
 import { emptyDoc } from "./tiptap-text";
 import { database, encrypt, decrypt, dataDirectory } from "./database";
-import { hashPassword } from "./auth";
+import { hashPassword, tokenDigest } from "./auth";
 import { SECRET_MASK, mergeSecrets } from "./secrets";
 import {
   GitHubReadOnlyDocumentError,
@@ -996,9 +996,129 @@ export async function getComment(id: string): Promise<Comment | undefined> {
   return comment ? structuredClone(comment) : undefined;
 }
 
+function removeUserReferences(
+  data: StoreData,
+  user: { id: string; email: string; name: string },
+  legacyNameIsUnique: boolean,
+) {
+  const email = user.email.trim().toLowerCase();
+  for (const space of data.spaces) {
+    space.allowedEmails = (space.allowedEmails ?? []).filter(
+      (allowed) => allowed.trim().toLowerCase() !== email,
+    );
+  }
+  data.comments = (data.comments ?? []).filter((comment) => {
+    if (comment.authorUserId === user.id) return false;
+    const isLegacyComment =
+      !comment.authorUserId &&
+      comment.author.trim().toLowerCase() === user.name.trim().toLowerCase();
+    if (!isLegacyComment) return true;
+    if (legacyNameIsUnique) return false;
+    comment.author = "Utilisateur supprimé";
+    comment.body = "Commentaire anonymisé après suppression d’un compte.";
+    return true;
+  });
+}
+
+async function purgeGeneratedBackups() {
+  const directory = path.join(DATA_DIR, "backups");
+  let names: string[];
+  try {
+    names = await fs.readdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  for (const name of names) {
+    if (!name.startsWith("documentalist-") || !name.endsWith(".sqlite"))
+      continue;
+    const file = path.join(directory, name);
+    const info = await fs.lstat(file);
+    if (info.isFile()) await fs.unlink(file);
+  }
+}
+
+export async function eraseUserData(userId: string) {
+  return enqueue(async (data) => {
+    migrateStore(data);
+    const db = database();
+    const user = db
+      .prepare("SELECT id,email,name FROM users WHERE id=?")
+      .get(userId) as { id: string; email: string; name: string } | undefined;
+    if (!user) throw new Error("Compte introuvable.");
+    const nameMatches = db
+      .prepare("SELECT count(*) AS count FROM users WHERE lower(name)=lower(?)")
+      .get(user.name) as { count: number };
+    const legacyNameIsUnique = nameMatches.count === 1;
+    removeUserReferences(data, user, legacyNameIsUnique);
+    validateDocumentTree(data.documents, data.spaces);
+    const version = revisions.get(data);
+
+    // A generated SQLite copy could otherwise restore the erased account later.
+    await purgeGeneratedBackups();
+    await fs.unlink(path.join(DATA_DIR, "legacy-backup.enc")).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    });
+
+    db.transaction(() => {
+      const row = db
+        .prepare("SELECT revision FROM state WHERE id=1")
+        .get() as { revision: number } | undefined;
+      if (!row || version !== row.revision)
+        throw new Error("Conflit d’écriture : rechargez avant de réessayer.");
+
+      db.prepare(
+        "INSERT OR IGNORE INTO state_backups(revision,payload) SELECT revision,payload FROM state WHERE id=1",
+      ).run();
+      db.prepare("UPDATE state SET payload=?,revision=revision+1 WHERE id=1").run(
+        encrypt(JSON.stringify(data)),
+      );
+      db.prepare("DELETE FROM state_backups WHERE revision < ?").run(
+        row.revision - 19,
+      );
+
+      const snapshots = db
+        .prepare("SELECT revision,payload FROM state_backups")
+        .all() as { revision: number; payload: string }[];
+      const updateSnapshot = db.prepare(
+        "UPDATE state_backups SET payload=? WHERE revision=?",
+      );
+      for (const snapshot of snapshots) {
+        const historical = JSON.parse(decrypt(snapshot.payload)) as StoreData;
+        migrateStore(historical);
+        removeUserReferences(historical, user, legacyNameIsUnique);
+        updateSnapshot.run(encrypt(JSON.stringify(historical)), snapshot.revision);
+      }
+
+      const emailHash = tokenDigest(user.email.trim().toLowerCase());
+      db.prepare("DELETE FROM portal_magic_tokens WHERE email_hash=?").run(
+        emailHash,
+      );
+      db.prepare("DELETE FROM portal_access_sessions WHERE email_hash=?").run(
+        emailHash,
+      );
+      db.prepare(
+        "DELETE FROM rate_limits WHERE bucket IN (?,?) OR bucket LIKE ?",
+      ).run(
+        "login:" + user.email.trim().toLowerCase(),
+        "user:" + user.id,
+        "%:" + emailHash,
+      );
+      db.prepare("DELETE FROM activity WHERE lower(actor)=lower(?) OR target=?").run(
+        user.email,
+        user.id,
+      );
+      db.prepare("DELETE FROM users WHERE id=?").run(user.id);
+    })();
+    revisions.set(data, (version ?? 0) + 1);
+    return { ok: true };
+  });
+}
+
 export async function addComment(input: {
   documentId: string;
   author: string;
+  authorUserId?: string;
   body: string;
 }): Promise<Comment> {
   return enqueue(async (data) => {
@@ -1009,6 +1129,7 @@ export async function addComment(input: {
       id: `cmt_${nanoid(8)}`,
       documentId: input.documentId,
       author: input.author.trim() || "You",
+      authorUserId: input.authorUserId,
       body: input.body.trim(),
       resolved: false,
       createdAt: new Date().toISOString(),

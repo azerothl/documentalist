@@ -151,6 +151,8 @@ export type Comment = {
   id: string;
   documentId: string;
   author: string;
+  /** Account id for precise export and erasure; absent on legacy comments. */
+  authorUserId?: string;
   body: string;
   resolved: boolean;
   createdAt: string;

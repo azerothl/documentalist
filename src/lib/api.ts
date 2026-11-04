@@ -135,7 +135,13 @@ function validateBody(path: string, method: string, body: unknown) {
 
 export function secureRoute<A extends unknown[]>(
   handler: (request: Request, ...args: A) => Promise<Response>,
-  options: { public?: boolean; admin?: boolean; editor?: boolean } = {},
+  options: {
+    public?: boolean;
+    admin?: boolean;
+    editor?: boolean;
+    allowViewer?: boolean;
+    audit?: boolean;
+  } = {},
 ) {
   return async (request: Request, ...args: A): Promise<Response> => {
     try {
@@ -156,7 +162,7 @@ export function secureRoute<A extends unknown[]>(
         user &&
         ((admin && user.role !== "admin") ||
           (options.editor && user.role === "viewer") ||
-          (mutation && user.role === "viewer"))
+          (mutation && user.role === "viewer" && !options.allowViewer))
       )
         return NextResponse.json(
           { error: "Vous n’avez pas les droits nécessaires." },
@@ -231,7 +237,7 @@ export function secureRoute<A extends unknown[]>(
         if (scopeError) return scopeError;
       }
       const response = await handler(request, ...args);
-      if (mutation && user && response.ok)
+      if (mutation && user && response.ok && options.audit !== false)
         audit(user.email, request.method, path);
       response.headers.set("Cache-Control", "private, no-store");
       if (response.headers.get("Content-Type")?.includes("application/json")) {

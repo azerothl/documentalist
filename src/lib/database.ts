@@ -1,18 +1,85 @@
 import Database from "better-sqlite3";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  chmodSync,
+  readdirSync,
+  lstatSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import path from "node:path";
 import { randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
+import { getRetentionPolicy } from "./privacy";
 
 export const dataDirectory =
   process.env.DOCUMENTALIST_DATA_DIR || path.join(process.cwd(), "data");
 const globals = globalThis as typeof globalThis & {
   documentalistDb?: Database.Database;
   documentalistKey?: Buffer;
+  documentalistRetentionCleanupAt?: number;
 };
+
+function retentionCutoff(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace("T", " ")
+    .slice(0, 19);
+}
+
+function pruneLocalBackups(days: number) {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const directory = path.join(dataDirectory, "backups");
+  if (existsSync(directory)) {
+    for (const name of readdirSync(directory)) {
+      if (!name.startsWith("documentalist-") || !name.endsWith(".sqlite"))
+        continue;
+      const file = path.join(directory, name);
+      const info = lstatSync(file);
+      if (info.isFile() && info.mtimeMs < cutoff) unlinkSync(file);
+    }
+  }
+}
+
+function pruneExpiredAndRetainedData(db: Database.Database) {
+  const now = Date.now();
+  if (
+    globals.documentalistRetentionCleanupAt &&
+    now - globals.documentalistRetentionCleanupAt < 60 * 60 * 1000
+  )
+    return;
+  const retention = getRetentionPolicy();
+  db.transaction(() => {
+    db.prepare("DELETE FROM sessions WHERE expires_at<?").run(now);
+    db.prepare("DELETE FROM account_tokens WHERE expires_at<?").run(now);
+    db.prepare("DELETE FROM portal_magic_tokens WHERE expires_at<?").run(now);
+    db.prepare("DELETE FROM portal_access_sessions WHERE expires_at<?").run(now);
+    db.prepare("DELETE FROM mcp_connections WHERE expires_at<? OR revoked_at IS NOT NULL").run(now);
+    db.prepare("DELETE FROM rate_limits WHERE resets_at<?").run(now);
+    db.prepare("DELETE FROM activity WHERE created_at<?").run(
+      retentionCutoff(retention.activityDays),
+    );
+    db.prepare("DELETE FROM state_backups WHERE created_at<?").run(
+      retentionCutoff(retention.snapshotDays),
+    );
+  })();
+  pruneLocalBackups(retention.backupDays);
+  const legacyBackup = path.join(dataDirectory, "legacy-backup.enc");
+  if (
+    existsSync(legacyBackup) &&
+    statSync(legacyBackup).mtimeMs <
+      Date.now() - retention.snapshotDays * 24 * 60 * 60 * 1000
+  )
+    unlinkSync(legacyBackup);
+  globals.documentalistRetentionCleanupAt = now;
+}
 
 function key() {
   if (globals.documentalistKey) return globals.documentalistKey;
-  mkdirSync(dataDirectory, { recursive: true });
+  mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
+  chmodSync(dataDirectory, 0o700);
   const file = path.join(dataDirectory, "encryption.key");
   if (!existsSync(file)) {
     try {
@@ -21,6 +88,7 @@ function key() {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
   }
+  chmodSync(file, 0o600);
   const value = process.env.DOCUMENTALIST_ENCRYPTION_KEY
     ? Buffer.from(process.env.DOCUMENTALIST_ENCRYPTION_KEY, "base64")
     : readFileSync(file);
@@ -47,9 +115,21 @@ export function decrypt(text: string): string {
 }
 
 export function database() {
-  if (globals.documentalistDb) return globals.documentalistDb;
-  mkdirSync(dataDirectory, { recursive: true });
-  const db = new Database(path.join(dataDirectory, "documentalist.sqlite"));
+  if (globals.documentalistDb) {
+    pruneExpiredAndRetainedData(globals.documentalistDb);
+    return globals.documentalistDb;
+  }
+  mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
+  chmodSync(dataDirectory, 0o700);
+  const file = path.join(dataDirectory, "documentalist.sqlite");
+  const previousUmask = process.umask(0o077);
+  let db: Database.Database;
+  try {
+    db = new Database(file);
+  } finally {
+    process.umask(previousUmask);
+  }
+  chmodSync(file, 0o600);
   if (Number(db.pragma("user_version", { simple: true })) > 4) {
     db.close();
     throw new Error(
@@ -88,7 +168,12 @@ export function database() {
     CREATE INDEX IF NOT EXISTS portal_sessions_space_email ON portal_access_sessions(space_id,email_hash);
     PRAGMA user_version = 4;
   `);
+  for (const suffix of ["-wal", "-shm"]) {
+    const sidecar = file + suffix;
+    if (existsSync(sidecar)) chmodSync(sidecar, 0o600);
+  }
   globals.documentalistDb = db;
+  pruneExpiredAndRetainedData(db);
   return db;
 }
 

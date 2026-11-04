@@ -25,9 +25,11 @@ async function handlePOST(request: Request) {
       { status: 400 },
     );
   }
+  const user = (await currentUser())!;
   const comment = await addComment({
     documentId: body.documentId,
-    author: (await currentUser())!.name,
+    author: user.name,
+    authorUserId: user.id,
     body: body.body,
   });
   return NextResponse.json({ comment }, { status: 201 });

@@ -16,7 +16,11 @@ export default async function Team() {
       <h1 className="my-6 font-[family-name:var(--font-display)] text-3xl">
         Équipe et activité
       </h1>
-      <TeamPanel admin={user.role === "admin"} />
+      <TeamPanel
+        admin={user.role === "admin"}
+        currentUserId={user.id}
+        currentEmail={user.email}
+      />
     </main>
   );
 }

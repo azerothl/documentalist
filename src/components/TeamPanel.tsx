@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { McpConnections } from "./McpConnections";
@@ -23,7 +24,15 @@ type TeamData = {
   }[];
   backups: { revision: number; created_at: string }[];
 };
-export function TeamPanel({ admin }: { admin: boolean }) {
+export function TeamPanel({
+  admin,
+  currentUserId,
+  currentEmail,
+}: {
+  admin: boolean;
+  currentUserId: string;
+  currentEmail: string;
+}) {
   const router = useRouter();
   const [data, setData] = useState<TeamData | null>(null);
   const [error, setError] = useState("");
@@ -77,6 +86,29 @@ export function TeamPanel({ admin }: { admin: boolean }) {
       setBusy(false);
     }
   }
+  async function eraseMyAccount() {
+    const confirmation = window.prompt(
+      `La suppression est définitive. Saisissez ${currentEmail} pour confirmer.`,
+    );
+    if (confirmation === null) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/privacy", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmation }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      router.replace("/login");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Échec de la suppression.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="space-y-8">
       <button
@@ -89,6 +121,38 @@ export function TeamPanel({ admin }: { admin: boolean }) {
       >
         Se déconnecter
       </button>
+      <section className="rounded border border-[var(--line)] p-4">
+        <h2 className="mb-2 text-xl">Vos données personnelles</h2>
+        <p className="mb-3 text-sm">
+          Consultez la{" "}
+          <Link className="text-[var(--accent)] underline" href="/privacy">
+            notice de confidentialité
+          </Link>
+          téléchargez les données liées à ce compte ou demandez sa suppression.
+          Les contenus partagés ne sont pas attribués aux comptes dans cette version.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <a
+            className="rounded border border-[var(--line)] px-3 py-2"
+            href="/api/auth/privacy/export"
+          >
+            Télécharger mes données
+          </a>
+          <button
+            className="rounded border border-[var(--danger)] px-3 py-2 text-[var(--danger)]"
+            disabled={busy}
+            onClick={() => void eraseMyAccount()}
+          >
+            Supprimer mon compte et ses données liées
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-[var(--ink-muted)]">
+          La suppression efface le compte, ses accès et ses commentaires
+          attribués. Les fichiers de sauvegarde générés sur l’instance sont
+          purgés. Les sauvegardes téléchargées ou conservées hors de cette
+          instance relèvent de son opérateur.
+        </p>
+      </section>
       {error && (
         <p role="alert" className="text-[var(--danger)]">
           {error}
@@ -110,6 +174,7 @@ export function TeamPanel({ admin }: { admin: boolean }) {
                     <th>Utilisateur</th>
                     <th>Espaces accessibles</th>
                     <th>Rôle</th>
+                    <th>Données</th>
                     <th>Accès</th>
                     <th>Statut et lien</th>
                   </tr>
@@ -194,6 +259,34 @@ export function TeamPanel({ admin }: { admin: boolean }) {
                           <option value="editor">Rédacteur</option>
                           <option value="viewer">Lecteur</option>
                         </select>
+                      </td>
+                      <td>
+                        {u.id === currentUserId ? (
+                          <span className="text-xs">Votre compte</span>
+                        ) : (
+                          <button
+                            className="text-[var(--danger)] underline"
+                            disabled={busy}
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  `Supprimer définitivement le compte de ${u.name} (${u.email}) et ses données liées ?`,
+                                )
+                              )
+                                return;
+                              const confirmation = window.prompt(
+                                `Saisissez ${u.email} pour confirmer.`,
+                              );
+                              if (confirmation !== null)
+                                void action("/api/admin/team", "DELETE", {
+                                  id: u.id,
+                                  confirmation,
+                                });
+                            }}
+                          >
+                            Supprimer
+                          </button>
+                        )}
                       </td>
                       <td>
                         <button
