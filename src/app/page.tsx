@@ -1,7 +1,14 @@
 import Link from "next/link";
-import { BookOpen, FileText, LayoutPanelLeft, PenLine } from "lucide-react";
-import { AppearanceSettings } from "@/components/Appearance";
+import {
+  ArrowRight,
+  BookOpen,
+  FileText,
+  LayoutPanelLeft,
+  PenLine,
+} from "lucide-react";
+import { AppearanceSettings, ThemeToggle } from "@/components/Appearance";
 import { BrandLogo } from "@/components/BrandLogo";
+import { FasstDots } from "@/components/FasstDots";
 import { listSpaces } from "@/lib/store";
 import { DOC_SECTIONS, docSection } from "@/lib/types";
 
@@ -29,54 +36,49 @@ export default async function HomePage() {
   const spaces = (await listSpaces()).filter(
     (s) => s.isPublic && s.publishedSnapshot,
   );
-  const published = spaces.filter((s) => s.publishedSnapshot);
 
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="site-nav">
-        <div className="site-nav-inner mx-auto max-w-6xl">
+        <div className="site-nav-inner mx-auto max-w-7xl">
           <Link href="/" className="site-brand">
             <BrandLogo height={30} priority />
           </Link>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="site-nav-end">
+            <ThemeToggle />
             <AppearanceSettings variant="icon" />
             <Link href="/app" className="site-tab hidden sm:inline-flex">
-              Ouvrir l’espace de rédaction
-            </Link>
-            <Link href="/app" className="primary-button hidden sm:inline-flex">
-              Commencer à écrire
+              Espace de rédaction
             </Link>
           </div>
         </div>
       </header>
 
       <main id="main-content" tabIndex={-1} className="flex-1">
-        <section className="border-b border-[var(--line)] bg-[var(--wash)]">
-          <div className="mx-auto flex max-w-3xl flex-col items-center px-6 pb-20 pt-16 text-center md:pt-24">
+        <section className="home-hero">
+          <div className="home-hero-inner">
             <p className="eyebrow">Portails de documentation</p>
-            <h1 className="mt-6 flex justify-center">
+            <h1 className="home-title mt-6 flex justify-center">
               <BrandLogo height={88} priority />
             </h1>
-            <p className="page-lead max-w-xl">
+            <p className="home-subtitle">
               Organisez vos guides, rédigez avec des blocs et publiez un portail
               consultable et accessible à votre équipe.
             </p>
-            <div className="mt-10 flex flex-wrap justify-center gap-3">
-              <Link
-                href="/app"
-                className="primary-button min-h-12 px-6 text-base"
-              >
+            <div className="home-actions">
+              <Link href="/app" className="primary-button button-lg">
                 Rédiger la documentation
+                <ArrowRight size={18} aria-hidden="true" />
               </Link>
-              {published[0] ? (
+              {spaces[0] ? (
                 <Link
-                  href={`/p/${published[0].slug}`}
-                  className="secondary-button min-h-12 px-6 text-base"
+                  href={`/p/${spaces[0].slug}`}
+                  className="secondary-button button-lg"
                 >
-                  Consulter {published[0].name}
+                  Consulter {spaces[0].name}
                 </Link>
               ) : (
-                <span className="secondary-button min-h-12 border-dashed px-6 text-base text-[var(--ink-faint)]">
+                <span className="secondary-button button-lg border-dashed text-[var(--ink-faint)]">
                   Publiez un espace pour ouvrir son portail
                 </span>
               )}
@@ -85,85 +87,131 @@ export default async function HomePage() {
         </section>
 
         <section
-          aria-label="Fonctions"
-          className="mx-auto grid max-w-6xl gap-5 px-6 py-16 md:grid-cols-3"
+          aria-labelledby="features-title"
+          className="home-section bg-[var(--wash)]"
         >
-          {FEATURES.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="card">
-              <span
-                className="inline-grid h-11 w-11 place-items-center rounded-xl bg-[var(--cream-soft)] text-[var(--ocre)]"
-                aria-hidden="true"
-              >
-                <Icon size={22} />
-              </span>
-              <h2 className="card-title mt-5 text-xl">{title}</h2>
-              <p className="card-text text-sm">{body}</p>
-            </div>
-          ))}
+          <div className="home-section-head">
+            <h2 id="features-title" className="home-section-title">
+              Ce que fait Documentalist
+            </h2>
+            <p className="home-section-lead">
+              La rédaction, la publication et la lecture se font au même
+              endroit.
+            </p>
+          </div>
+          <ul className="mx-auto grid max-w-6xl gap-4 md:grid-cols-3">
+            {FEATURES.map(({ icon: Icon, title, body }) => (
+              <li key={title} className="card bg-[var(--surface)]">
+                <span className="home-feature-icon" aria-hidden="true">
+                  <Icon size={22} />
+                </span>
+                <h3 className="card-title mt-5 text-xl">{title}</h3>
+                <p className="card-text text-[0.9375rem]">{body}</p>
+              </li>
+            ))}
+          </ul>
         </section>
 
-        <section className="border-t border-[var(--line)]">
-          <div className="mx-auto max-w-6xl px-6 py-16">
-            <p className="eyebrow">Portails</p>
-            <h2 className="mt-2 text-3xl font-bold text-[var(--heading)]">
+        <section aria-labelledby="portals-title" className="home-section">
+          <div className="home-section-head">
+            <h2 id="portals-title" className="home-section-title">
               Documentation publiée
             </h2>
-            {spaces.length ? (
-              <ul className="card-grid mt-8">
-                {spaces.map((space) => {
-                  const docs = space.publishedSnapshot?.documents ?? [];
-                  const tabs = DOC_SECTIONS.filter((t) =>
-                    docs.some((d) => !d.hidden && docSection(d) === t.id),
-                  );
-                  return (
-                    <li key={space.id} className="card flex flex-col">
-                      <div className="flex items-start gap-3">
+          </div>
+          {spaces.length ? (
+            <ul className="card-grid mx-auto max-w-6xl">
+              {spaces.map((space) => {
+                const docs = space.publishedSnapshot?.documents ?? [];
+                const tabs = DOC_SECTIONS.filter((t) =>
+                  docs.some((d) => !d.hidden && docSection(d) === t.id),
+                );
+                return (
+                  <li key={space.id}>
+                    <Link
+                      href={`/p/${space.slug}`}
+                      className="card flex h-full flex-col"
+                    >
+                      <span className="flex items-start gap-3">
                         <span
                           className="inline-grid h-10 w-10 flex-none place-items-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]"
                           aria-hidden="true"
                         >
                           <FileText size={20} />
                         </span>
-                        <div className="min-w-0">
-                          <h3 className="card-title text-xl">{space.name}</h3>
-                          <p className="card-meta">
-                            /{space.slug}
-                            {space.publishedAt ? " · publié" : " · brouillon"}
-                          </p>
-                        </div>
-                      </div>
+                        <span className="min-w-0">
+                          <span className="card-title block text-xl">
+                            {space.name}
+                          </span>
+                          <span className="card-meta block">/{space.slug}</span>
+                        </span>
+                      </span>
                       {tabs.length ? (
-                        <p className="mt-4 flex flex-wrap gap-1.5">
+                        <span className="mt-4 flex flex-wrap gap-1.5">
                           {tabs.map((t) => (
                             <span key={t.id} className="chip">
                               {t.label}
                             </span>
                           ))}
-                        </p>
+                        </span>
                       ) : null}
-                      <div className="mt-auto flex gap-2 pt-6">
-                        <Link
-                          href={`/p/${space.slug}`}
-                          className="secondary-button"
-                        >
-                          Consulter
-                        </Link>
-                        <Link href="/app" className="site-tab">
-                          Rédiger
-                        </Link>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="mt-6 text-[var(--ink-muted)]">
-                Aucun espace publié pour le moment.
+                      <span className="card-more mt-auto pt-6">
+                        Consulter
+                        <ArrowRight size={16} aria-hidden="true" />
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-center text-[var(--ink-muted)]">
+              Aucun espace publié pour le moment.
+            </p>
+          )}
+        </section>
+
+        <section aria-labelledby="start-title" className="fasst-band">
+          <FasstDots />
+          <div className="home-section relative">
+            <div className="home-section-head mb-0">
+              <h2 id="start-title" className="home-section-title">
+                Publiez votre premier portail
+              </h2>
+              <p className="home-section-lead">
+                Créez un espace, rédigez une page, puis choisissez qui peut la
+                lire : tout le monde, les personnes qui ont le code ou des
+                lecteurs invités.
               </p>
-            )}
+              <div className="home-actions">
+                <Link href="/app" className="primary-button button-lg">
+                  Ouvrir l’espace de rédaction
+                  <ArrowRight size={18} aria-hidden="true" />
+                </Link>
+              </div>
+            </div>
           </div>
         </section>
       </main>
+
+      <footer className="site-footer pt-12">
+        <div className="site-footer-inner">
+          <div className="footer-brand">
+            <BrandLogo height={26} />
+            <span>Documentation des produits et des équipes.</span>
+          </div>
+          <nav aria-label="Pied de page" className="footer-links">
+            <div className="footer-col">
+              <p className="footer-heading">Produit</p>
+              <Link href="/app">Espace de rédaction</Link>
+              <Link href="/team">Équipe et activité</Link>
+            </div>
+            <div className="footer-col">
+              <p className="footer-heading">Plus</p>
+              <Link href="/privacy">Confidentialité</Link>
+            </div>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }

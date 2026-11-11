@@ -59,6 +59,42 @@ function mix(a: string, b: string, amount: number) {
   );
 }
 
+function toHsl(hex: string): [number, number, number] {
+  const [r, g, b] = rgb(hex).map((v) => v / 255);
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h =
+    max === r
+      ? (g - b) / d + (g < b ? 6 : 0)
+      : max === g
+        ? (b - r) / d + 2
+        : (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+function fromHsl(h: number, s: number, l: number) {
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (t: number) => {
+    const x = t < 0 ? t + 1 : t > 1 ? t - 1 : t;
+    const v =
+      x < 1 / 6
+        ? p + (q - p) * 6 * x
+        : x < 1 / 2
+          ? q
+          : x < 2 / 3
+            ? p + (q - p) * (2 / 3 - x) * 6
+            : p;
+    return Math.round(v * 255)
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${channel(h + 1 / 3)}${channel(h)}${channel(h - 1 / 3)}`;
+}
+
 /** Keep custom branding legible on text, selections, buttons and focus rings. */
 export function accentStyle(brand: string, theme: Theme): CSSProperties {
   const background =
@@ -68,15 +104,23 @@ export function accentStyle(brand: string, theme: Theme): CSSProperties {
   const original = /^#[\da-f]{6}$/i.test(brand) ? brand : "#1f425b";
   // In dark mode, lighten toward a pale sky blue so FASST navy stays blue.
   const toward = theme === "dark" ? "#e3eef5" : "#000000";
+  // On the navy background, 4.5:1 leaves links greyish: aim for 7:1.
+  const target = theme === "dark" ? 7 : 4.5;
+  // In dark mode, lighten the brand hue itself so links stay recognisably
+  // blue (or ochre…) instead of drifting to grey.
+  const [hue, saturation, lightness] = toHsl(original);
   let accent = original;
   for (let i = 0; i <= 100; i++) {
-    accent = mix(original, toward, i / 100);
+    accent =
+      theme === "dark" && i < 100
+        ? fromHsl(hue, saturation, lightness + ((1 - lightness) * i) / 100)
+        : mix(original, toward, i / 100);
     if (
       Math.min(
         contrastRatio(accent, background),
         contrastRatio(accent, surface),
         contrastRatio(accent, mix(surface, accent, 0.1)),
-      ) >= 4.5
+      ) >= target
     )
       break;
   }

@@ -645,6 +645,7 @@ test(
             .getByRole("link", { name: "Getting started", exact: true })
             .waitFor();
           await page.keyboard.press("Escape");
+          await page.getByRole("button", { name: "Search", exact: true }).click();
           await page
             .getByLabel("Search the documentation")
             .fill("introuvable-zzzzz");
@@ -731,6 +732,9 @@ test(
                 .count(),
               0,
             );
+            await rp
+              .getByRole("button", { name: "Search", exact: true })
+              .click();
             await rp
               .getByLabel("Search the documentation", { exact: true })
               .fill("backup");

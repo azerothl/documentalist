@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Barlow, DM_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { AppearanceProvider } from "@/components/Appearance";
+import { ScrollState } from "@/components/ScrollState";
 import { appearanceBootstrap } from "@/lib/appearance";
 
 // Charte FASST : Barlow pour les titres, DM Sans pour le texte.
@@ -42,6 +43,7 @@ export default function RootLayout({
         className={`${display.variable} ${body.variable} ${mono.variable} antialiased`}
       >
         <AppearanceProvider>
+          <ScrollState />
           <a className="skip-link" href="#main-content">
             Aller au contenu
           </a>

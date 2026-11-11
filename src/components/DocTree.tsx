@@ -63,14 +63,13 @@ export function DocTree({
             </span>
           ) : null;
 
-        const className = [
-          "doc-tree-link block min-h-9 w-full break-words rounded-md px-2 py-2 text-left text-sm leading-snug",
-          isActive
-            ? "bg-[var(--accent-soft)] text-[var(--accent)] font-medium"
-            : "text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]",
-          node.kind === "category" ? "font-semibold" : "",
-          dragOverId === node.id ? "ring-1 ring-[var(--accent)]" : "",
-        ].join(" ");
+        // Styled in globals.css like the portal sidebar rows.
+        const className = "doc-tree-link";
+        const rowData = {
+          "data-kind": node.kind,
+          "data-depth": depth,
+          "data-drop-target": dragOverId === node.id ? "true" : undefined,
+        };
 
         return (
           <li
@@ -121,6 +120,7 @@ export function DocTree({
               <button
                 type="button"
                 className={className}
+                {...rowData}
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => onSelect?.(node.id)}
               >
@@ -136,6 +136,7 @@ export function DocTree({
               <a
                 href={node.href}
                 className={className}
+                {...rowData}
                 target="_blank"
                 rel="noreferrer"
                 onClick={onNavigate}
@@ -147,6 +148,7 @@ export function DocTree({
               <Link
                 href={baseHref(node)}
                 className={className}
+                {...rowData}
                 aria-current={isActive ? "page" : undefined}
                 onClick={onNavigate}
               >
