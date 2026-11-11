@@ -2,6 +2,29 @@
 
 Plateforme de documentation avec espaces, pages imbriquées, édition par blocs et portails publiés. Application Next.js 16 / React 19 / TipTap, avec comptes locaux et stockage SQLite chiffré.
 
+## Aperçu
+
+Captures des espaces d’exemple Product docs et API docs. Elles sont générées par `npm run docs:screenshots` après `npm run build` et mises à jour à chaque modification visible de l’interface.
+
+| Portail, onglet Reference | Recherche (Ctrl K, ⌘ K ou /) |
+| --- | --- |
+| ![Portail Product docs avec la barre latérale, l’article et le sommaire « Sur cette page »](docs/screenshots/portail-reference.png) | ![Fenêtre de recherche avec les résultats groupés par onglet et les termes surlignés](docs/screenshots/recherche.png) |
+
+| Thème sombre | Bloc de code |
+| --- | --- |
+| ![Page Learn « Rédiger et relire une page » en thème sombre](docs/screenshots/portail-sombre.png) | ![Page API docs avec un bloc de code et son bouton Copier](docs/screenshots/portail-code.png) |
+
+| Accueil | Espace de rédaction |
+| --- | --- |
+| ![Page d’accueil de Documentalist](docs/screenshots/accueil.png) | ![Éditeur de l’espace de rédaction avec l’arbre des pages et le sommaire](docs/screenshots/espace-redaction.png) |
+
+Sur mobile, la loupe ouvre la recherche et Documents ouvre les onglets, la version, la langue et l’arbre :
+
+<p>
+  <img src="docs/screenshots/portail-mobile.png" width="260" alt="Portail sur mobile, page Premiers pas">
+  <img src="docs/screenshots/portail-mobile-menu.png" width="260" alt="Menu Documents ouvert sur mobile">
+</p>
+
 ## Démarrer
 
 Node.js 22 est recommandé.

@@ -11,7 +11,8 @@
     "test:http": "tsx --test scripts/http.test.ts",
     "typecheck": "tsc --noEmit",
     "data:backup": "tsx scripts/backup.ts",
-    "test:browser": "tsx --test scripts/browser.test.ts"
+    "test:browser": "tsx --test scripts/browser.test.ts",
+    "docs:screenshots": "tsx scripts/readme-screenshots.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

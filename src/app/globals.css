@@ -2388,7 +2388,9 @@ a {
 .nav-select[data-icon] > select {
   padding-left: 34px;
 }
-.search-input > input {
+/* label.search-input matches the specificity of the generic label > input
+   rule, which comes earlier in the file. */
+label.search-input > input[type="search"] {
   display: block;
   width: auto;
   min-height: 0;
@@ -2400,6 +2402,6 @@ a {
   background: transparent;
 }
 /* The pill around the field already shows the focus ring. */
-.search-input > input:focus-visible {
+label.search-input > input[type="search"]:focus-visible {
   outline: none;
 }
