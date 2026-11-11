@@ -24,7 +24,14 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:http
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install chromium
+      # L’image GitHub contient déjà les bibliothèques de Chrome : apt n’ajoute
+      # que des polices. Une panne des miroirs Ubuntu ne bloque donc pas la
+      # vérification ; test:browser échoue s’il manque vraiment une bibliothèque.
+      - name: Dépendances système de Chromium (polices)
+        run: npx playwright install-deps chromium
+        continue-on-error: true
+        timeout-minutes: 6
       - run: npm run test:browser
       - run: npm audit --omit=dev
 
