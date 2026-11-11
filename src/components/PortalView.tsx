@@ -1,31 +1,44 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   ArrowRight,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
+  Languages,
   Menu,
   PenLine,
   Search,
 } from "lucide-react";
-import { AppearanceSettings, useAppearance } from "@/components/Appearance";
+import {
+  AppearanceSettings,
+  ThemeToggle,
+  useAppearance,
+} from "@/components/Appearance";
 import { BrandLogo } from "@/components/BrandLogo";
+import { CopyButton } from "@/components/CopyButton";
 import { Dialog } from "@/components/Dialog";
 import {
   AccountNavigation,
   type AccountIdentity,
 } from "@/components/AccountNavigation";
+import { PortalSearch } from "@/components/PortalSearch";
 import { DocumentContent } from "@/components/DocumentContent";
 import { TocPanel } from "@/components/TocPanel";
 import { PortalLocaleSync } from "@/components/PortalLocaleSync";
 import { accentStyle } from "@/lib/appearance";
+import { tipTapToMarkdown } from "@/lib/markdown";
 import { getPortalUi } from "@/lib/portal-i18n";
 import { buildTree, findByPath, flattenTree, pathSlugs } from "@/lib/tree";
-import { documentTrail, readingContent, searchExcerpt } from "@/lib/reading";
+import { documentTrail, readingContent } from "@/lib/reading";
 import {
   compareBlogPosts,
   formatPostDate,
@@ -82,6 +95,33 @@ function excerpt(doc: DocumentRecord, length = 220) {
   return text.length > length ? `${text.slice(0, length).trimEnd()}…` : text;
 }
 
+const normalize = (text: string) =>
+  text
+    .replace(/(…|\.\.\.)$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** "⌘" on Apple keyboards, "Ctrl" elsewhere, as react.dev's search button. */
+const subscribeNothing = () => () => {};
+function useModifierKey() {
+  return useSyncExternalStore(
+    subscribeNothing,
+    () => (/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"),
+    () => "Ctrl",
+  );
+}
+
+function languageName(code: string, uiLanguage: string) {
+  try {
+    const name = new Intl.DisplayNames([uiLanguage], { type: "language" }).of(
+      code,
+    );
+    return name ? name.charAt(0).toLocaleUpperCase() + name.slice(1) : code;
+  } catch {
+    return code;
+  }
+}
+
 export function PortalView({
   space,
   versionSpaces,
@@ -98,9 +138,9 @@ export function PortalView({
   const router = useRouter();
   const { theme } = useAppearance();
   const { language: uiLanguage, messages: t } = getPortalUi(locale);
-  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
+  const modifierKey = useModifierKey();
 
   const visible = useMemo(
     () =>
@@ -162,14 +202,25 @@ export function PortalView({
     ? ordered.filter((d) => d.parentId === current.id)
     : [];
 
-  const allPages = visible.filter((d) => d.kind === "page");
-  const results = query.trim()
-    ? allPages.filter((d) =>
-        `${d.title} ${(d.tags ?? []).join(" ")} ${extractText(d.content)}`
-          .toLocaleLowerCase()
-          .includes(query.trim().toLocaleLowerCase()),
-      )
-    : [];
+  // Imported pages often reuse their first paragraph as description: show it
+  // once, styled as the intro, instead of repeating a truncated copy.
+  const lead = current?.seoDescription
+    ? applyVariables(current.seoDescription, varMap).trim()
+    : "";
+  const firstParagraphNode = content?.content?.find(
+    (node) => node.type === "paragraph",
+  );
+  const firstParagraph = firstParagraphNode
+    ? normalize(extractText(firstParagraphNode))
+    : "";
+  const showLead =
+    Boolean(lead) &&
+    !(firstParagraph && firstParagraph.startsWith(normalize(lead)));
+
+  const allPages = useMemo(
+    () => visible.filter((d) => d.kind === "page"),
+    [visible],
+  );
 
   const index = current ? ordered.findIndex((d) => d.id === current.id) : -1;
   const previous =
@@ -206,19 +257,19 @@ export function PortalView({
     return href(undefined, locale, tab);
   }
 
-  // Ctrl/Cmd+K or "/" focuses the search field, as on react.dev.
+  // Ctrl/Cmd+K toggles the search dialog; "/" opens it, as on react.dev.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing =
         target?.closest("input, textarea, select, [contenteditable='true']") !=
         null;
-      if (
-        ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") ||
-        (!typing && event.key === "/")
-      ) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        searchRef.current?.focus();
+        setSearchOpen((open) => !open);
+      } else if (!typing && event.key === "/") {
+        event.preventDefault();
+        setSearchOpen(true);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -226,59 +277,99 @@ export function PortalView({
   }, []);
 
   const currentVersion = versionSpaces.find((s) => s.id === space.id);
+  const locales = space.locales?.length ? space.locales : [locale];
 
-  const controls = (
-    <div className="grid gap-2 px-5 pb-4">
-      {internal ? (
-        <select
-          aria-label={t.controls.space}
-          value={space.id}
-          onChange={(e) =>
-            router.push(`/app?space=${encodeURIComponent(e.target.value)}`)
-          }
-          className="reader-select w-full"
-        >
-          {availableSpaces.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      ) : null}
-      <div className="grid grid-cols-2 gap-2">
+  function changeVersion(id: string) {
+    const target = versionSpaces.find((s) => s.id === id);
+    if (target)
+      router.push(
+        internal
+          ? `/app?space=${target.id}&lang=${locale}`
+          : `/p/${target.slug}?lang=${locale}`,
+      );
+  }
+
+  const versionOptions = versionSpaces.map((s) => (
+    <option key={s.id} value={s.id}>
+      {s.versionLabel}
+    </option>
+  ));
+  const languageOptions = locales.map((l) => (
+    <option key={l} value={l}>
+      {languageName(l, uiLanguage)}
+    </option>
+  ));
+
+  const navVersion =
+    versionSpaces.length > 1 ? (
+      <label className="nav-select hidden sm:inline-flex">
         <select
           aria-label={t.controls.version}
-          className="reader-select w-full"
           value={space.id}
-          onChange={(e) => {
-            const target = versionSpaces.find((s) => s.id === e.target.value);
-            if (target)
-              router.push(
-                internal
-                  ? `/app?space=${target.id}&lang=${locale}`
-                  : `/p/${target.slug}?lang=${locale}`,
-              );
-          }}
+          onChange={(e) => changeVersion(e.target.value)}
         >
-          {versionSpaces.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.versionLabel}
-            </option>
-          ))}
+          {versionOptions}
         </select>
+        <ChevronDown size={14} aria-hidden="true" />
+      </label>
+    ) : currentVersion ? (
+      <span className="site-version hidden sm:inline">
+        {currentVersion.versionLabel}
+      </span>
+    ) : null;
+
+  const navLanguage =
+    locales.length > 1 ? (
+      <label className="nav-select hidden md:inline-flex" data-icon>
+        <Languages size={16} aria-hidden="true" />
         <select
           aria-label={t.controls.language}
-          className="reader-select w-full"
           value={locale}
-          onChange={(e) => router.push(href(undefined, e.target.value))}
+          onChange={(e) => router.push(href(current, e.target.value))}
         >
-          {(space.locales ?? [locale]).map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
+          {languageOptions}
         </select>
-      </div>
+        <ChevronDown size={14} aria-hidden="true" />
+      </label>
+    ) : null;
+
+  // The internal reader picks a space; the mobile menu also carries version
+  // and language, which the top bar hides on small screens.
+  const spaceControl = internal ? (
+    <select
+      aria-label={t.controls.space}
+      value={space.id}
+      onChange={(e) =>
+        router.push(`/app?space=${encodeURIComponent(e.target.value)}`)
+      }
+      className="reader-select w-full"
+    >
+      {availableSpaces.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.name}
+        </option>
+      ))}
+    </select>
+  ) : null;
+  const mobileControls = (
+    <div className="sidebar-controls">
+      {spaceControl ? <div className="col-span-2">{spaceControl}</div> : null}
+      <select
+        aria-label={t.controls.version}
+        className="reader-select w-full"
+        value={space.id}
+        onChange={(e) => changeVersion(e.target.value)}
+      >
+        {versionOptions}
+      </select>
+      <select
+        aria-label={t.controls.language}
+        className="reader-select w-full"
+        value={locale}
+        onChange={(e) => router.push(href(current, e.target.value))}
+      >
+        {languageOptions}
+      </select>
     </div>
   );
 
@@ -355,6 +446,12 @@ export function PortalView({
     </nav>
   );
 
+  const brandMark = (
+    <span className="site-logo-mark" aria-hidden="true">
+      {space.name.trim().charAt(0).toUpperCase() || "D"}
+    </span>
+  );
+
   return (
     <div
       lang={uiLanguage}
@@ -367,57 +464,62 @@ export function PortalView({
       />
       <header className="site-nav reader-header">
         <div className="site-nav-inner">
+          <div className="site-nav-start">
+            <button
+              type="button"
+              className="site-icon-button lg:hidden"
+              aria-haspopup="dialog"
+              aria-expanded={navigationOpen}
+              aria-label={t.documents}
+              onClick={() => setNavigationOpen(true)}
+            >
+              <Menu size={22} aria-hidden="true" />
+            </button>
+            <Link
+              href={tabHref(tabs[0]?.id ?? "reference")}
+              className="site-brand"
+            >
+              {brandMark}
+              <span className="site-brand-name">{space.name}</span>
+            </Link>
+            {navVersion}
+          </div>
           <button
             type="button"
-            className="site-icon-button lg:hidden"
+            className="site-search-button hidden md:flex"
             aria-haspopup="dialog"
-            aria-expanded={navigationOpen}
-            aria-label={t.documents}
-            onClick={() => setNavigationOpen(true)}
+            aria-keyshortcuts="Control+K Meta+K"
+            onClick={() => setSearchOpen(true)}
           >
-            <Menu size={22} aria-hidden="true" />
-          </button>
-          <Link
-            href={tabHref(tabs[0]?.id ?? "reference")}
-            className="site-brand"
-          >
-            <span className="site-logo-mark" aria-hidden="true">
-              {space.name.trim().charAt(0).toUpperCase() || "D"}
-            </span>
-            <span className="site-brand-name">{space.name}</span>
-          </Link>
-          {currentVersion ? (
-            <span className="site-version hidden sm:inline">
-              {currentVersion.versionLabel}
-            </span>
-          ) : null}
-          <div className="site-search">
             <Search size={18} aria-hidden="true" />
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setQuery("");
-              }}
-              type="search"
-              aria-label={t.search.label}
-              placeholder={t.search.placeholder}
-              autoComplete="off"
-            />
-            <kbd aria-hidden="true">Ctrl K</kbd>
-          </div>
-          {sectionTabs("site-tabs ml-auto hidden md:flex")}
-          <div className="ml-auto flex items-center gap-1 md:ml-2">
+            <span>{t.search.placeholder}</span>
+            <span className="kbd-group" aria-hidden="true">
+              <kbd className="kbd">{modifierKey}</kbd>
+              <kbd className="kbd">K</kbd>
+            </span>
+          </button>
+          <div className="site-nav-end">
+            {sectionTabs("site-tabs mr-2 hidden lg:flex")}
+            <button
+              type="button"
+              className="site-icon-button md:hidden"
+              aria-haspopup="dialog"
+              aria-label={t.search.placeholder}
+              onClick={() => setSearchOpen(true)}
+            >
+              <Search size={20} aria-hidden="true" />
+            </button>
+            {navLanguage}
             {account ? (
               <AccountNavigation user={account} locale={locale} />
             ) : null}
             {!internal ? (
               <>
+                <ThemeToggle locale={locale} />
                 <AppearanceSettings variant="icon" locale={locale} />
                 <Link
                   href="/app"
-                  className="site-icon-button"
+                  className="site-icon-button hidden sm:inline-grid"
                   aria-label={t.writingSpace}
                   title={t.writingSpace}
                 >
@@ -429,58 +531,7 @@ export function PortalView({
             )}
           </div>
         </div>
-        {query.trim() ? (
-          <section
-            aria-label={t.search.results}
-            className="site-search-results"
-          >
-            <p
-              role="status"
-              className="px-3 pb-2 text-sm text-[var(--ink-muted)]"
-            >
-              {results.length
-                ? t.search.resultCount(results.length, query)
-                : t.search.noResults(query)}
-            </p>
-            {results.length ? (
-              <ul className="flex flex-col gap-1">
-                {results.map((doc) => (
-                  <li key={doc.id}>
-                    <Link
-                      href={href(doc)}
-                      onClick={() => {
-                        setQuery("");
-                        setNavigationOpen(false);
-                      }}
-                      className="search-hit search-result"
-                    >
-                      <span className="search-hit-title">
-                        {doc.title}
-                        <span className="section-pill">
-                          {t.sections[docSection(doc)]}
-                        </span>
-                      </span>
-                      <span className="block text-sm text-[var(--ink-muted)]">
-                        {documentTrail(bySection[docSection(doc)], doc.id)
-                          .map((d) => d.title)
-                          .join(" / ")}
-                      </span>
-                      <span className="block text-sm" lang={doc.locale}>
-                        {searchExcerpt(doc.content, query)}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="px-3 text-sm text-[var(--ink-muted)]">
-                {t.search.tryAnother}
-              </p>
-            )}
-          </section>
-        ) : null}
       </header>
-      {tabs.length > 1 ? sectionTabs("site-mobile-tabs md:hidden") : null}
 
       <div className="site-body reader-layout">
         <nav
@@ -488,135 +539,190 @@ export function PortalView({
           aria-label={t.sidebar.nav}
           className="site-sidebar"
         >
-          {controls}
+          {spaceControl ? (
+            <div className="sidebar-controls">{spaceControl}</div>
+          ) : null}
           {sidebar}
         </nav>
-        <main id="main-content" tabIndex={-1} className="site-main">
-          {showBlogIndex ? (
-            <BlogIndex
-              spaceName={space.name}
-              intro={blogIntro}
-              posts={pages}
-              href={href}
-              varMap={varMap}
-              locale={locale}
-            />
-          ) : current && content ? (
-            <article lang={locale} className="site-article reading-document">
-              <nav aria-label={t.breadcrumb}>
-                <ol className="breadcrumbs">
-                  <li>
-                    <Link href={tabHref(activeSection)}>
-                      {t.sections[activeSection]}
-                    </Link>
-                  </li>
-                  {documentTrail(sectionDocs, current.id)
-                    .slice(0, -1)
-                    .map((d) => (
-                      <li key={d.id} className="flex items-center gap-1.5">
-                        <ChevronRight size={14} aria-hidden="true" />
-                        <Link href={href(d)}>{d.title}</Link>
+        <div className="site-center">
+          <main id="main-content" tabIndex={-1} className="site-main">
+            {showBlogIndex ? (
+              <BlogIndex
+                spaceName={space.name}
+                intro={blogIntro}
+                posts={pages}
+                href={href}
+                varMap={varMap}
+                locale={locale}
+              />
+            ) : current && content ? (
+              <article
+                lang={locale}
+                className="site-article reading-document"
+                data-intro={showLead ? undefined : "true"}
+              >
+                <div className="page-header">
+                  <nav aria-label={t.breadcrumb}>
+                    <ol className="breadcrumbs">
+                      <li>
+                        <Link href={tabHref(activeSection)}>
+                          {t.sections[activeSection]}
+                        </Link>
+                        <ChevronRight size={16} aria-hidden="true" />
                       </li>
-                    ))}
-                  <li className="sr-only" aria-current="page">
-                    {current.title}
-                  </li>
-                </ol>
-              </nav>
-              <h1 className="page-title">{title}</h1>
-              {isBlog && current.date ? (
-                <p className="page-meta">
-                  <time dateTime={current.date}>
-                    {formatPostDate(current.date, locale)}
-                  </time>
-                </p>
-              ) : null}
-              {current.seoDescription ? (
-                <p className="page-lead">
-                  {applyVariables(current.seoDescription, varMap)}
-                </p>
-              ) : null}
-              {current.hidden && internal ? (
-                <p className="mt-4 text-sm text-[var(--ink-muted)]">
-                  {t.hiddenPage}
-                </p>
-              ) : null}
-              {extractHeadings(content).length ? (
-                <details className="page-contents mt-6 xl:hidden">
-                  <summary className="cursor-pointer py-2 font-semibold">
-                    {t.onThisPage}
-                  </summary>
-                  <TocPanel content={content} locale={locale} />
-                </details>
-              ) : null}
-              {contentEmpty && children.length ? null : (
-                <DocumentContent content={content} locale={locale} />
-              )}
-              {children.length ? (
-                <section aria-label={t.children} className="mt-10">
-                  <div className="card-grid">
-                    {children.map((child) => (
-                      <Link key={child.id} href={href(child)} className="card">
-                        <h2 className="card-title text-xl">{child.title}</h2>
-                        {excerpt(child, 140) ? (
-                          <p className="card-text text-sm">
-                            {excerpt(child, 140)}
-                          </p>
-                        ) : null}
+                      {documentTrail(sectionDocs, current.id)
+                        .slice(0, -1)
+                        .map((d) => (
+                          <li key={d.id}>
+                            <Link href={href(d)}>{d.title}</Link>
+                            <ChevronRight size={16} aria-hidden="true" />
+                          </li>
+                        ))}
+                      <li className="sr-only" aria-current="page">
+                        {current.title}
+                      </li>
+                    </ol>
+                  </nav>
+                  {!contentEmpty ? (
+                    <CopyButton
+                      className="secondary-button copy-page-button"
+                      text={() =>
+                        `# ${title}\n\n${tipTapToMarkdown(content)}`.trim() +
+                        "\n"
+                      }
+                      label={t.page.copy}
+                      copiedLabel={t.page.copied}
+                      title={t.page.copyDescription}
+                    >
+                      <span className="hidden sm:inline">{t.page.copy}</span>
+                      <span className="sm:hidden">{t.page.copyShort}</span>
+                    </CopyButton>
+                  ) : null}
+                </div>
+                <h1 className="page-title">{title}</h1>
+                {isBlog && current.date ? (
+                  <p className="page-meta">
+                    <time dateTime={current.date}>
+                      {formatPostDate(current.date, locale)}
+                    </time>
+                  </p>
+                ) : null}
+                {showLead ? <p className="page-lead">{lead}</p> : null}
+                {current.hidden && internal ? (
+                  <p className="mt-4 text-sm text-[var(--ink-muted)]">
+                    {t.hiddenPage}
+                  </p>
+                ) : null}
+                {extractHeadings(content).length ? (
+                  <details className="page-contents xl:hidden">
+                    <summary>{t.onThisPage}</summary>
+                    <TocPanel content={content} locale={locale} />
+                  </details>
+                ) : null}
+                {contentEmpty && children.length ? null : (
+                  <DocumentContent content={content} locale={locale} />
+                )}
+                {children.length ? (
+                  <section aria-label={t.children} className="mt-10">
+                    <div className="card-grid">
+                      {children.map((child) => (
+                        <Link
+                          key={child.id}
+                          href={href(child)}
+                          className="card"
+                        >
+                          <h2 className="card-title text-xl">{child.title}</h2>
+                          {excerpt(child, 140) ? (
+                            <p className="card-text text-sm">
+                              {excerpt(child, 140)}
+                            </p>
+                          ) : null}
+                          <span className="card-more">
+                            {t.blog.readMore}
+                            <ArrowRight size={16} aria-hidden="true" />
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+                {previous || next ? (
+                  <nav aria-label={t.pager.nav} className="pager">
+                    {previous ? (
+                      <Link
+                        href={href(previous)}
+                        aria-label={t.pager.previousPage(previous.title)}
+                        className="pager-card page-step"
+                        data-direction="previous"
+                      >
+                        <ChevronLeft size={22} aria-hidden="true" />
+                        <span className="pager-text">
+                          <span className="pager-label">
+                            {isBlog ? t.pager.newer : t.pager.previous}
+                          </span>
+                          <span className="pager-title">{previous.title}</span>
+                        </span>
                       </Link>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-              {previous || next ? (
-                <nav
-                  aria-label={t.pager.nav}
-                  className="pager"
-                >
-                  {previous ? (
-                    <Link
-                      href={href(previous)}
-                      aria-label={t.pager.previousPage(previous.title)}
-                      className="pager-card page-step"
-                      data-direction="previous"
-                    >
-                      <ArrowLeft size={22} aria-hidden="true" />
-                      <span>
-                        <span className="pager-label">
-                          {isBlog ? t.pager.newer : t.pager.previous}
+                    ) : null}
+                    {next ? (
+                      <Link
+                        href={href(next)}
+                        aria-label={t.pager.nextPage(next.title)}
+                        className="pager-card page-step"
+                        data-direction="next"
+                      >
+                        <ChevronRight size={22} aria-hidden="true" />
+                        <span className="pager-text">
+                          <span className="pager-label">
+                            {isBlog ? t.pager.older : t.pager.next}
+                          </span>
+                          <span className="pager-title">{next.title}</span>
                         </span>
-                        <span className="pager-title">{previous.title}</span>
-                      </span>
+                      </Link>
+                    ) : null}
+                  </nav>
+                ) : null}
+              </article>
+            ) : (
+              <div className="site-article">
+                <h1 className="page-title">{t.sections[activeSection]}</h1>
+                <p className="page-lead">{t.noPages(locale)}</p>
+              </div>
+            )}
+          </main>
+
+          <footer className="site-footer">
+            <div className="site-footer-inner">
+              <div className="footer-brand">
+                <span className="site-brand">
+                  {brandMark}
+                  <span className="site-brand-name">{space.name}</span>
+                </span>
+                <span className="footer-published">
+                  {t.footer.publishedWith}
+                  <BrandLogo height={22} />
+                </span>
+              </div>
+              <nav aria-label={t.footer.nav} className="footer-links">
+                <div className="footer-col">
+                  <p className="footer-heading">{t.footer.documentation}</p>
+                  {tabs.map((tab) => (
+                    <Link key={tab.id} href={tabHref(tab.id)}>
+                      {t.sections[tab.id]}
                     </Link>
+                  ))}
+                </div>
+                <div className="footer-col">
+                  <p className="footer-heading">{t.footer.more}</p>
+                  <Link href="/privacy">{t.footer.privacy}</Link>
+                  {!internal ? (
+                    <Link href="/app">{t.writingSpace}</Link>
                   ) : null}
-                  {next ? (
-                    <Link
-                      href={href(next)}
-                      aria-label={t.pager.nextPage(next.title)}
-                      className="pager-card page-step"
-                      data-direction="next"
-                    >
-                      <span>
-                        <span className="pager-label">
-                          {isBlog ? t.pager.older : t.pager.next}
-                        </span>
-                        <span className="pager-title">{next.title}</span>
-                      </span>
-                      <ArrowRight size={22} aria-hidden="true" />
-                    </Link>
-                  ) : null}
-                </nav>
-              ) : null}
-            </article>
-          ) : (
-            <div className="site-article">
-              <h1 className="page-title">{t.sections[activeSection]}</h1>
-              <p className="page-lead">
-                {t.noPages(locale)}
-              </p>
+                </div>
+              </nav>
             </div>
-          )}
-        </main>
+          </footer>
+        </div>
         {content && !showBlogIndex ? (
           <aside className="site-toc" aria-label={t.tableOfContents}>
             <PageToc content={content} tags={current?.tags} locale={locale} />
@@ -624,28 +730,15 @@ export function PortalView({
         ) : null}
       </div>
 
-      <footer className="site-footer">
-        <div className="site-footer-inner">
-          <span className="site-brand">
-            <span className="site-logo-mark" aria-hidden="true">
-              {space.name.trim().charAt(0).toUpperCase() || "D"}
-            </span>
-            <span className="site-brand-name">{space.name}</span>
-          </span>
-          <nav aria-label={t.footer.nav}>
-            {tabs.map((tab) => (
-              <Link key={tab.id} href={tabHref(tab.id)}>
-                {t.sections[tab.id]}
-              </Link>
-            ))}
-            <Link href="/privacy">Confidentialité / Privacy</Link>
-          </nav>
-          <span className="inline-flex items-center gap-2">
-            {t.footer.publishedWith}
-            <BrandLogo height={22} />
-          </span>
-        </div>
-      </footer>
+      <PortalSearch
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        pages={allPages}
+        bySection={bySection}
+        activeSection={activeSection}
+        href={(doc) => href(doc)}
+        locale={locale}
+      />
 
       <Dialog
         open={navigationOpen}
@@ -656,12 +749,9 @@ export function PortalView({
         className="navigation-dialog"
       >
         <nav id="portal-mobile-navigation" aria-label={t.sidebar.nav}>
-          {tabs.length > 1 ? (
-            <div className="mb-4 px-1">
-              {sectionTabs("site-tabs flex-wrap")}
-            </div>
-          ) : null}
-          {controls}
+          {tabs.length > 1 ? sectionTabs("site-tabs") : null}
+          {mobileControls}
+          <div role="separator" className="sidebar-separator" />
           {sidebar}
         </nav>
       </Dialog>
@@ -691,11 +781,11 @@ function SidebarTree({
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const onTrail = new Set(trail.map((d) => d.id));
   return (
-    <ul>
+    <ul className={depth ? "sidebar-children" : undefined}>
       {nodes.map((node) => {
         const hasChildren = node.children.length > 0;
         const expanded = open[node.id] ?? (depth === 0 || onTrail.has(node.id));
-        const indent = `${20 + depth * 16}px`;
+        const indent = `${20 + depth * 14}px`;
         return (
           <li key={node.id}>
             <div className="sidebar-row">
@@ -812,7 +902,7 @@ function PageToc({
                   className="toc-link"
                   style={
                     {
-                      "--indent": `${12 + (h.level - minLevel) * 14}px`,
+                      "--indent": `${16 + (h.level - minLevel) * 14}px`,
                     } as React.CSSProperties
                   }
                   aria-current={
@@ -873,8 +963,8 @@ function BlogIndex({
   const { messages } = getPortalUi(locale);
   return (
     <div className="site-article">
-      <p className="eyebrow">{messages.blog.releaseNotes}</p>
-      <h1 className="page-title mt-2">{messages.sections.blog}</h1>
+      <p className="eyebrow mt-1">{messages.blog.releaseNotes}</p>
+      <h1 className="page-title mt-3">{messages.sections.blog}</h1>
       <p className="page-lead">
         {applyVariables(
           intro?.seoDescription ||

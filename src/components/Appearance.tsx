@@ -1,6 +1,6 @@
 "use client";
 
-import { SunMoon } from "lucide-react";
+import { ALargeSmall, Moon, Sun } from "lucide-react";
 import {
   createContext,
   useContext,
@@ -146,7 +146,7 @@ export function AppearanceSettings({
           aria-label={t.title}
           title={t.title}
         >
-          <SunMoon size={20} aria-hidden="true" />
+          <ALargeSmall size={20} aria-hidden="true" />
         </button>
       ) : (
         <button
@@ -233,5 +233,28 @@ export function AppearanceSettings({
         </div>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * One-click light/dark switch, as on react.dev. Both icons are rendered and
+ * CSS shows the one matching the theme applied before hydration.
+ */
+export function ThemeToggle({ locale = "fr" }: { locale?: string }) {
+  const { theme, update } = useAppearance();
+  const { messages } = getPortalUi(locale);
+  const label =
+    theme === "dark" ? messages.appearance.useLight : messages.appearance.useDark;
+  return (
+    <button
+      type="button"
+      className="site-icon-button theme-toggle"
+      aria-label={label}
+      title={label}
+      onClick={() => update({ theme: theme === "dark" ? "light" : "dark" })}
+    >
+      <Moon className="theme-icon-dark" size={20} aria-hidden="true" />
+      <Sun className="theme-icon-light" size={20} aria-hidden="true" />
+    </button>
   );
 }

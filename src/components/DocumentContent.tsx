@@ -2,6 +2,8 @@ import type { TipTapDoc, TipTapNode } from "@/lib/types";
 import { useId, type ReactNode } from "react";
 import { extractText } from "@/lib/tiptap-text";
 import { getPortalUi } from "@/lib/portal-i18n";
+import { CircleAlert, CircleCheck, Info, Link2 } from "lucide-react";
+import { CopyButton } from "@/components/CopyButton";
 
 const safeUrl = (value: unknown, image = false) =>
   typeof value === "string" &&
@@ -42,17 +44,27 @@ export function DocumentContent({
       }
       case "heading": {
         const id = `section-${heading++}`;
-        return Number(node.attrs?.level) === 1 ? (
-          <h2 id={id} key={key}>
-            {children}
-          </h2>
-        ) : Number(node.attrs?.level) === 3 ? (
+        // Mouse shortcut to the section link, as on react.dev. Keyboard and
+        // screen-reader users reach the same anchors through "On this page".
+        const anchor = (
+          <a
+            href={`#${id}`}
+            className="heading-anchor"
+            aria-hidden="true"
+            tabIndex={-1}
+          >
+            <Link2 size={18} />
+          </a>
+        );
+        return Number(node.attrs?.level) === 3 ? (
           <h3 id={id} key={key}>
             {children}
+            {anchor}
           </h3>
         ) : (
           <h2 id={id} key={key}>
             {children}
+            {anchor}
           </h2>
         );
       }
@@ -66,12 +78,41 @@ export function DocumentContent({
         return <li key={key}>{children}</li>;
       case "blockquote":
         return <blockquote key={key}>{children}</blockquote>;
-      case "codeBlock":
+      case "codeBlock": {
+        const language =
+          typeof node.attrs?.language === "string" &&
+          /^[\w+#.-]{1,24}$/.test(node.attrs.language)
+            ? node.attrs.language
+            : "";
         return (
-          <pre key={key} tabIndex={0} aria-label={messages.content.codeBlock}>
-            <code>{children}</code>
-          </pre>
+          <div
+            key={key}
+            className="code-block"
+            data-labelled={language ? "true" : undefined}
+          >
+            {language ? (
+              <span className="code-block-label" aria-hidden="true">
+                {language}
+              </span>
+            ) : null}
+            <pre
+              tabIndex={0}
+              aria-label={
+                language
+                  ? `${messages.content.codeBlock} (${language})`
+                  : messages.content.codeBlock
+              }
+            >
+              <code>{children}</code>
+            </pre>
+            <CopyButton
+              text={(node.content ?? []).map((n) => n.text ?? "").join("")}
+              label={messages.content.copyCode}
+              copiedLabel={messages.content.codeCopied}
+            />
+          </div>
         );
+      }
       case "hardBreak":
         return <br key={key} />;
       case "horizontalRule":
@@ -169,6 +210,13 @@ export function DocumentContent({
             className={`doc-callout doc-callout--${variant}`}
           >
             <p lang={language} className="doc-callout-label">
+              {variant === "warning" ? (
+                <CircleAlert size={20} aria-hidden="true" />
+              ) : variant === "success" ? (
+                <CircleCheck size={20} aria-hidden="true" />
+              ) : (
+                <Info size={20} aria-hidden="true" />
+              )}
               {variant === "warning"
                 ? messages.content.warning
                 : variant === "success"

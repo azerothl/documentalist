@@ -2,6 +2,29 @@
 
 Plateforme de documentation avec espaces, pages imbriquées, édition par blocs et portails publiés. Application Next.js 16 / React 19 / TipTap, avec comptes locaux et stockage SQLite chiffré.
 
+## Aperçu
+
+Captures des espaces d’exemple Product docs et API docs. Elles sont générées par `npm run docs:screenshots` après `npm run build` et mises à jour à chaque modification visible de l’interface.
+
+| Portail, onglet Reference | Recherche (Ctrl K, ⌘ K ou /) |
+| --- | --- |
+| ![Portail Product docs avec la barre latérale, l’article et le sommaire « Sur cette page »](docs/screenshots/portail-reference.png) | ![Fenêtre de recherche avec les résultats groupés par onglet et les termes surlignés](docs/screenshots/recherche.png) |
+
+| Thème sombre | Bloc de code |
+| --- | --- |
+| ![Page Learn « Rédiger et relire une page » en thème sombre](docs/screenshots/portail-sombre.png) | ![Page API docs avec un bloc de code et son bouton Copier](docs/screenshots/portail-code.png) |
+
+| Accueil | Espace de rédaction |
+| --- | --- |
+| ![Page d’accueil de Documentalist](docs/screenshots/accueil.png) | ![Éditeur de l’espace de rédaction avec l’arbre des pages et le sommaire](docs/screenshots/espace-redaction.png) |
+
+Sur mobile, la loupe ouvre la recherche et Documents ouvre les onglets, la version, la langue et l’arbre :
+
+<p>
+  <img src="docs/screenshots/portail-mobile.png" width="260" alt="Portail sur mobile, page Premiers pas">
+  <img src="docs/screenshots/portail-mobile-menu.png" width="260" alt="Menu Documents ouvert sur mobile">
+</p>
+
 ## Démarrer
 
 Node.js 22 est recommandé.
@@ -86,7 +109,7 @@ La compilation utilise webpack et un correctif ciblé pour les volumes Windows q
 | Édition                 | Blocs `/`, tableaux, tâches, images par URL, encadrés, coloration du code et aperçu                                                                                                                                               |
 | Sauvegarde              | File de sauvegarde par document, attente avant publication, alerte si la page est quittée avant enregistrement, révisions restaurables                                                                                            |
 | Publication             | Instantané des documents et variables, pages masquées exclues côté serveur ; choix public, code partagé ou lien magique nominatif ; espaces privés absents du répertoire public                                                              |
-| Portail                 | Onglets Learn, Reference et Blog, interface française ou anglaise selon la langue sélectionnée (repli français), dates localisées, lecture sans TipTap, sommaire, recherche (Ctrl K), menu mobile et versions                         |
+| Portail                 | Onglets Learn, Reference et Blog, interface française ou anglaise selon la langue sélectionnée (repli français), dates localisées, lecture sans TipTap, sommaire, recherche groupée par onglet (Ctrl K, ⌘ K ou /), copie de la page en Markdown, thème clair ou sombre, menu mobile et versions                         |
 | Accès                   | Administrateur, rédacteur et lecteur ; invitations d’équipe par courriel ; portails publics, par code ou réservés aux adresses invitées ; vérification côté serveur et cookies HttpOnly                                            |
 | IA                      | Question, rédaction et correction sur le contexte de la page avec OpenAI, Anthropic ou une API compatible                                                                                                                         |
 | Import/export           | Markdown ; adaptation GFM, Obsidian et MDX sans exécuter de JavaScript                                                                                                                                                            |
