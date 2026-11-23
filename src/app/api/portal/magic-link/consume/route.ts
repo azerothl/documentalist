@@ -33,7 +33,7 @@ export const POST = secureRoute(
       return NextResponse.json(
         {
           error:
-            "Le portail n’est pas encore publié avec cet accès, ou l’invitation a été retirée.",
+            "Le portail n’est pas encore publié avec cet accès, ou l’invitation a été retirée ou a expiré.",
         },
         { status: 409 },
       );

@@ -158,6 +158,77 @@ test("Sécurité, publication et persistance", async (t) => {
         assert.ok(count <= 20);
       },
     );
+    await t.test("échéance des lecteurs : dernier jour inclus en UTC", async () => {
+      const { invitationDeadline, portalInvitationActive } = await import(
+        "../src/lib/portal-invitations"
+      );
+      assert.equal(
+        invitationDeadline("2026-12-31"),
+        Date.parse("2027-01-01T00:00:00.000Z"),
+      );
+      for (const bad of ["2026-02-30", "2026-13-01", "31/12/2026", "2026-12-31T00:00", ""])
+        assert.equal(invitationDeadline(bad), null, bad);
+      const space = {
+        allowedEmails: ["reader@example.test", "legacy@example.test"],
+        allowedEmailExpirations: { "reader@example.test": "2026-12-31" },
+      };
+      const lastSecond = Date.parse("2026-12-31T23:59:59.999Z");
+      const firstForbidden = Date.parse("2027-01-01T00:00:00.000Z");
+      assert.ok(portalInvitationActive(space, "reader@example.test", lastSecond));
+      assert.ok(portalInvitationActive(space, " Reader@Example.test ", lastSecond));
+      assert.ok(!portalInvitationActive(space, "reader@example.test", firstForbidden));
+      // An invitation without a date (made before this feature) stays open.
+      assert.ok(portalInvitationActive(space, "legacy@example.test", firstForbidden));
+      assert.ok(
+        portalInvitationActive({ allowedEmails: ["legacy@example.test"] }, "legacy@example.test"),
+      );
+      assert.ok(!portalInvitationActive(space, "other@example.test", lastSecond));
+      // A corrupted date or map refuses access instead of opening it.
+      assert.ok(
+        !portalInvitationActive(
+          { ...space, allowedEmailExpirations: { "reader@example.test": "bientôt" } },
+          "reader@example.test",
+          lastSecond,
+        ),
+      );
+      assert.ok(
+        !portalInvitationActive(
+          { ...space, allowedEmailExpirations: [] as unknown as Record<string, string> },
+          "legacy@example.test",
+          lastSecond,
+        ),
+      );
+    });
+    await t.test("échéance des lecteurs : enregistrement, changement et retrait", async () => {
+      const created = await store.createSpace({ name: "Lecteurs datés" });
+      await store.updateSpace(created.id, { accessMode: "magic_link" });
+      await store.updateSpaceAllowedEmail(created.id, "legacy@example.test", true);
+      await store.updateSpaceAllowedEmail(created.id, "Reader@Example.test", true, "2026-12-31");
+      let space = (await store.getSpace(created.id))!;
+      assert.deepEqual(space.allowedEmailExpirations, { "reader@example.test": "2026-12-31" });
+      // Inviting again without a date keeps the stored one.
+      await store.updateSpaceAllowedEmail(created.id, "reader@example.test", true);
+      space = (await store.getSpace(created.id))!;
+      assert.equal(space.allowedEmailExpirations?.["reader@example.test"], "2026-12-31");
+      await store.updateSpaceAllowedEmail(created.id, "reader@example.test", true, "2026-11-22", true);
+      space = (await store.getSpace(created.id))!;
+      assert.equal(space.allowedEmailExpirations?.["reader@example.test"], "2026-11-22");
+      await store.updateSpaceAllowedEmail(created.id, "reader@example.test", true, null, true);
+      space = (await store.getSpace(created.id))!;
+      assert.equal(space.allowedEmailExpirations?.["reader@example.test"], undefined);
+      await assert.rejects(
+        store.updateSpaceAllowedEmail(created.id, "absent@example.test", true, "2026-12-31", true),
+        /n’existe plus/,
+      );
+      assert.ok(!(await store.getSpace(created.id))!.allowedEmails.includes("absent@example.test"));
+      await store.updateSpaceAllowedEmail(created.id, "reader@example.test", true, "2026-12-31");
+      await store.updateSpaceAllowedEmail(created.id, "reader@example.test", false);
+      space = (await store.getSpace(created.id))!;
+      assert.deepEqual(space.allowedEmails, ["legacy@example.test"]);
+      assert.deepEqual(space.allowedEmailExpirations, {});
+      // The dates never reach general client payloads.
+      assert.deepEqual(clientData(space).allowedEmailExpirations, {});
+    });
     await t.test("comptes et mots de passe robustes", () => {
       const hash = hashPassword("a-long-and-good-password");
       assert.ok(verifyPassword("a-long-and-good-password", hash));
