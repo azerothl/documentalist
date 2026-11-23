@@ -33,6 +33,8 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
         DOCUMENTALIST_DATA_DIR: temp,
         DOCUMENTALIST_URL: origin,
         DOCUMENTALIST_COOKIE_SECURE: "false",
+        DOCUMENTALIST_SMTP_URL: "smtp://127.0.0.1:1",
+        DOCUMENTALIST_EMAIL_FROM: "test@example.org",
       },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -446,6 +448,47 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
         );
       },
     );
+    await t.test("expiration du lecteur : lien existant, session et nouvelle demande", async () => {
+      const created = await json("/api/spaces", "POST", { name: "Lecteurs temporaires" });
+      const id = created.space.id as string;
+      const portalSlug = created.space.slug as string;
+      await json(`/api/spaces/${id}`, "PATCH", { accessMode: "magic_link" });
+      const document = await json("/api/documents/import", "POST", { spaceId: id, title: "Secret", markdown: "# Secret\n\nEXPIRY_PRIVATE_CONTENT" });
+      const directUrl = `/p/${portalSlug}/reference/${document.document.slug}`;
+      const previousDirectory = process.env.DOCUMENTALIST_DATA_DIR;
+      process.env.DOCUMENTALIST_DATA_DIR = temp;
+      const store = await import("../src/lib/store");
+      const auth = await import("../src/lib/auth");
+      const { database } = await import("../src/lib/database");
+      const email = "expiry-reader@example.org";
+      try {
+        await store.updateSpaceAllowedEmail(id, email, true, "2099-12-31");
+        await json(`/api/spaces/${id}/publish`, "POST", { accessMode: "magic_link" });
+        const first = auth.createPortalMagicToken(id, email);
+        const consume = await request("/api/portal/magic-link/consume", "POST", { token: first }, "");
+        assert.equal(consume.status, 200);
+        const readerCookie = consume.headers.get("set-cookie")!.split(";")[0];
+        assert.match(await (await request(`/p/${portalSlug}`, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+        assert.match(await (await request(directUrl, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+        const oldLink = auth.createPortalMagicToken(id, email);
+        await json(`/api/spaces/${id}/access/invites`, "PATCH", { email, expiresOn: "2000-01-01" });
+        assert.equal((await json(`/api/spaces/${id}/access/invites`)).expirations[email], "2000-01-01");
+        assert.doesNotMatch(await (await request(`/p/${portalSlug}`, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+        assert.doesNotMatch(await (await request(directUrl, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+        assert.equal((await request("/api/portal/magic-link/consume", "POST", { token: oldLink }, "")).status, 409);
+        const count = () => (database().prepare("SELECT count(*) AS n FROM portal_magic_tokens WHERE space_id=?").get(id) as { n: number }).n;
+        const before = count();
+        assert.equal((await request("/api/portal/magic-link/request", "POST", { slug: portalSlug, email }, "")).status, 200);
+        assert.equal(count(), before);
+        await json(`/api/spaces/${id}/access/invites`, "PATCH", { email, expiresOn: "2099-12-31" });
+        await json(`/api/spaces/${id}/access/invites`, "DELETE", { email });
+        assert.doesNotMatch(await (await request(`/p/${portalSlug}`, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+      } finally {
+        database().close();
+        if (previousDirectory === undefined) delete process.env.DOCUMENTALIST_DATA_DIR;
+        else process.env.DOCUMENTALIST_DATA_DIR = previousDirectory;
+      }
+    });
   } finally {
     server.kill();
     await new Promise<void>((resolve) => {

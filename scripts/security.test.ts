@@ -18,6 +18,7 @@ test("Sécurité, publication et persistance", async (t) => {
     await import("../src/lib/auth");
   const { clientData, SECRET_MASK } = await import("../src/lib/secrets");
   const { publicPortalData } = await import("../src/lib/portal");
+  const { portalInvitationActive, invitationDeadline } = await import("../src/lib/portal-invitations");
   const { publicAddress, validateOutboundUrl, safeFetch } =
     await import("../src/lib/outbound");
   const { openApiPages } = await import("../src/lib/integrations");
@@ -319,6 +320,27 @@ test("Sécurité, publication et persistance", async (t) => {
       assert.equal(notion.files.length, 2);
       assert.ok(notion.files.some((f) => f.content.includes("Texte enfant")));
       assert.equal(notion.warnings.length, 0);
+    });
+    await t.test("échéance UTC par lecteur, révocation et compatibilité des invitations", async () => {
+      const first = await store.createSpace({ name: "Expiry A" });
+      const second = await store.createSpace({ name: "Expiry B" });
+      await store.updateSpace(first.id, { accessMode: "magic_link" });
+      await store.updateSpace(second.id, { accessMode: "magic_link" });
+      const email = "reader@example.org";
+      await store.updateSpaceAllowedEmail(first.id, email, true, "2030-04-12");
+      await store.updateSpaceAllowedEmail(second.id, email, true);
+      const a = (await store.getSpace(first.id))!;
+      const b = (await store.getSpace(second.id))!;
+      assert.equal(invitationDeadline("2030-02-30"), null);
+      assert.equal(portalInvitationActive(a, email, Date.parse("2030-04-12T23:59:59.999Z")), true);
+      assert.equal(portalInvitationActive(a, email, Date.parse("2030-04-13T00:00:00Z")), false);
+      assert.equal(portalInvitationActive(b, email, Date.parse("2040-01-01T00:00:00Z")), true);
+      assert.deepEqual(clientData(a).allowedEmailExpirations, {});
+      await store.updateSpaceAllowedEmail(first.id, email, true, "2030-05-01", true);
+      assert.equal(portalInvitationActive((await store.getSpace(first.id))!, email, Date.parse("2030-04-13T00:00:00Z")), true);
+      await store.updateSpaceAllowedEmail(first.id, email, false);
+      assert.equal(portalInvitationActive((await store.getSpace(first.id))!, email), false);
+      assert.equal(portalInvitationActive((await store.getSpace(second.id))!, email), true);
     });
   } finally {
     database().close();
