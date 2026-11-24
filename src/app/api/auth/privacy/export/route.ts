@@ -46,7 +46,9 @@ export const GET = secureRoute(async () => {
         (allowed) => allowed.trim().toLowerCase() === email,
       ),
     )
-    .map(({ id, name, slug, accessMode }) => ({ id, name, slug, accessMode }));
+    .map(({ id, name, slug, accessMode, allowedEmailExpirations }) => ({
+      id, name, slug, accessMode, expiresOn: allowedEmailExpirations?.[email] ?? null,
+    }));
   const comments = (data.comments ?? [])
     .filter(
       (comment) =>

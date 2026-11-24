@@ -84,6 +84,8 @@ export type Space = {
   description: string;
   accessMode: PortalAccessMode;
   allowedEmails: string[];
+  /** Optional last access day (YYYY-MM-DD UTC), keyed by normalized email. */
+  allowedEmailExpirations?: Record<string, string>;
   /** True only when the published portal is freely accessible. */
   isPublic: boolean;
   accentColor: string;

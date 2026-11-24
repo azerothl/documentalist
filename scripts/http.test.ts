@@ -16,6 +16,48 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
   const port = (socket.address() as { port: number }).port;
   await new Promise<void>((resolve) => socket.close(() => resolve()));
   const origin = `http://localhost:${port}`;
+  // Local SMTP sink: keeps every message so magic links can be followed.
+  const mails: { to: string; text: string }[] = [];
+  const smtp = createServer((connection) => {
+    let buffer = "";
+    let data = false;
+    let to = "";
+    const reply = (line: string) => connection.write(line + "\r\n");
+    reply("220 sink.example.test");
+    connection.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      let index;
+      while ((index = buffer.indexOf("\r\n")) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 2);
+        if (data) {
+          if (line === ".") {
+            data = false;
+            mails.at(-1)!.text = mails.at(-1)!.text
+              .replace(/=\r?\n/g, "")
+              .replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+            reply("250 queued");
+          } else mails.at(-1)!.text += line + "\n";
+          continue;
+        }
+        const verb = line.split(" ")[0].toUpperCase();
+        if (verb === "EHLO") reply("250 sink.example.test");
+        else if (verb === "RCPT") {
+          to = line.slice(8).replace(/[<>]/g, "").trim();
+          reply("250 OK");
+        } else if (verb === "DATA") {
+          data = true;
+          mails.push({ to, text: "" });
+          reply("354 go ahead");
+        } else if (verb === "QUIT") {
+          reply("221 bye");
+          connection.end();
+        } else reply("250 OK");
+      }
+    });
+  });
+  await new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve));
+  const smtpPort = (smtp.address() as { port: number }).port;
   const server = spawn(
     process.execPath,
     [
@@ -33,6 +75,8 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
         DOCUMENTALIST_DATA_DIR: temp,
         DOCUMENTALIST_URL: origin,
         DOCUMENTALIST_COOKIE_SECURE: "false",
+        DOCUMENTALIST_SMTP_URL: `smtp://127.0.0.1:${smtpPort}`,
+        DOCUMENTALIST_EMAIL_FROM: "Documentalist <docs@example.test>",
       },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -407,6 +451,71 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
         assert.equal((await fetch(origin + "/mcp", { method: "POST", headers: { Origin: "https://attacker.example", "Content-Type": "application/json" }, body: "{}" })).status, 403);
       } finally { await Promise.allSettled([publicClient.close(), privateClient.close()]); }
     });
+    await t.test("lien magique : dernier jour d’accès par lecteur", async () => {
+      const day = (offset: number) =>
+        new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+      const created = await json("/api/spaces", "POST", { name: "Lecteurs datés" });
+      const id = created.space.id;
+      const portal = `/p/${created.space.slug}`;
+      const invites = `/api/spaces/${id}/access/invites`;
+      await json(`/api/spaces/${id}`, "PATCH", { accessMode: "magic_link" });
+      async function lastLink(to: string) {
+        for (let i = 0; i < 40 && !mails.some((m) => m.to === to); i++) await delay(50);
+        const mail = mails.filter((m) => m.to === to).at(-1);
+        assert.ok(mail, `no mail for ${to}`);
+        return /\/portal\/access\?token=([A-Za-z0-9_-]+)/.exec(mail.text)![1];
+      }
+      async function open(token: string) {
+        const res = await request("/api/portal/magic-link/consume", "POST", { token }, "");
+        return { status: res.status, cookie: res.headers.get("set-cookie")?.split(";")[0] ?? "" };
+      }
+      async function reads(session: string) {
+        const html = await (await request(portal, "GET", undefined, session)).text();
+        return !html.includes('name="email"') && html.includes("Welcome");
+      }
+      assert.equal((await request(invites, "POST", { email: "dated@example.test", expiresOn: "2026-02-30" })).status, 400);
+      assert.equal((await request(invites, "POST", { email: "dated@example.test", expiresOn: day(-1) })).status, 400);
+      await json(invites, "POST", { email: "legacy@example.test" });
+      await json(invites, "POST", { email: "Dated@Example.test", expiresOn: day(0) });
+      await json(`/api/spaces/${id}/publish`, "POST", { accessMode: "magic_link" });
+      assert.deepEqual(await json(invites), {
+        emails: ["legacy@example.test", "dated@example.test"],
+        expirations: { "dated@example.test": day(0) },
+      });
+      // The general space payload carries neither the addresses nor their dates.
+      assert.ok(!JSON.stringify(await json(`/api/spaces/${id}`)).includes("dated@example.test"));
+      // Before the end (the last day is included): the reader gets in.
+      const dated = await open(await lastLink("dated@example.test"));
+      assert.equal(dated.status, 200);
+      assert.ok(await reads(dated.cookie));
+      const legacy = await open(await lastLink("legacy@example.test"));
+      assert.ok(await reads(legacy.cookie));
+      // A second link requested before the end stays unused.
+      const before = mails.length;
+      await json("/api/portal/magic-link/request", "POST", { slug: created.space.slug, email: "dated@example.test" });
+      const pending = await lastLink("dated@example.test");
+      assert.equal(mails.length, before + 1);
+      // The end date moves to yesterday: session, old link and new request are refused.
+      await json(invites, "PATCH", { email: "dated@example.test", expiresOn: day(-1) });
+      assert.equal((await json(invites)).expirations["dated@example.test"], day(-1));
+      assert.ok(!(await reads(dated.cookie)));
+      assert.equal((await open(pending)).status, 409);
+      await json("/api/portal/magic-link/request", "POST", { slug: created.space.slug, email: "dated@example.test" });
+      await delay(300);
+      assert.equal(mails.length, before + 1);
+      // Re-inviting an expired reader needs a new date.
+      assert.equal((await request(invites, "POST", { email: "dated@example.test" })).status, 400);
+      // The invitation without a date is untouched.
+      assert.ok(await reads(legacy.cookie));
+      // Clearing the date reopens the same session; revocation closes it at once.
+      await json(invites, "PATCH", { email: "dated@example.test", expiresOn: null });
+      assert.deepEqual((await json(invites)).expirations, {});
+      assert.ok(await reads(dated.cookie));
+      await json(invites, "DELETE", { email: "dated@example.test" });
+      assert.ok(!(await reads(dated.cookie)));
+      assert.equal((await request(invites, "PATCH", { email: "dated@example.test", expiresOn: day(3) })).status, 404);
+      assert.deepEqual((await json(invites)).emails, ["legacy@example.test"]);
+    });
     await t.test(
       "sauvegarde téléchargeable et journal d’activité",
       async () => {
@@ -446,8 +555,50 @@ test("Parcours HTTP avec données isolées", { timeout: 180_000 }, async (t) => 
         );
       },
     );
+    await t.test("expiration du lecteur : lien existant, session et nouvelle demande", async () => {
+      const created = await json("/api/spaces", "POST", { name: "Lecteurs temporaires" });
+      const id = created.space.id as string;
+      const portalSlug = created.space.slug as string;
+      await json(`/api/spaces/${id}`, "PATCH", { accessMode: "magic_link" });
+      const document = await json("/api/documents/import", "POST", { spaceId: id, title: "Secret", markdown: "# Secret\n\nEXPIRY_PRIVATE_CONTENT" });
+      const directUrl = `/p/${portalSlug}/reference/${document.document.slug}`;
+      const previousDirectory = process.env.DOCUMENTALIST_DATA_DIR;
+      process.env.DOCUMENTALIST_DATA_DIR = temp;
+      const store = await import("../src/lib/store");
+      const auth = await import("../src/lib/auth");
+      const { database } = await import("../src/lib/database");
+      const email = "expiry-reader@example.org";
+      try {
+        await store.updateSpaceAllowedEmail(id, email, true, "2099-12-31");
+        await json(`/api/spaces/${id}/publish`, "POST", { accessMode: "magic_link" });
+        const first = auth.createPortalMagicToken(id, email);
+        const consume = await request("/api/portal/magic-link/consume", "POST", { token: first }, "");
+        assert.equal(consume.status, 200);
+        const readerCookie = consume.headers.get("set-cookie")!.split(";")[0];
+        assert.match(await (await request(`/p/${portalSlug}`, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+        assert.match(await (await request(directUrl, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+        const oldLink = auth.createPortalMagicToken(id, email);
+        await json(`/api/spaces/${id}/access/invites`, "PATCH", { email, expiresOn: "2000-01-01" });
+        assert.equal((await json(`/api/spaces/${id}/access/invites`)).expirations[email], "2000-01-01");
+        assert.doesNotMatch(await (await request(`/p/${portalSlug}`, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+        assert.doesNotMatch(await (await request(directUrl, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+        assert.equal((await request("/api/portal/magic-link/consume", "POST", { token: oldLink }, "")).status, 409);
+        const count = () => (database().prepare("SELECT count(*) AS n FROM portal_magic_tokens WHERE space_id=?").get(id) as { n: number }).n;
+        const before = count();
+        assert.equal((await request("/api/portal/magic-link/request", "POST", { slug: portalSlug, email }, "")).status, 200);
+        assert.equal(count(), before);
+        await json(`/api/spaces/${id}/access/invites`, "PATCH", { email, expiresOn: "2099-12-31" });
+        await json(`/api/spaces/${id}/access/invites`, "DELETE", { email });
+        assert.doesNotMatch(await (await request(`/p/${portalSlug}`, "GET", undefined, readerCookie)).text(), /EXPIRY_PRIVATE_CONTENT/);
+      } finally {
+        database().close();
+        if (previousDirectory === undefined) delete process.env.DOCUMENTALIST_DATA_DIR;
+        else process.env.DOCUMENTALIST_DATA_DIR = previousDirectory;
+      }
+    });
   } finally {
     server.kill();
+    smtp.close();
     await new Promise<void>((resolve) => {
       if (server.exitCode !== null) resolve();
       else server.once("exit", () => resolve());

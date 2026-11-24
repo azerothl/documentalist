@@ -16,6 +16,7 @@ export function clientData<T>(value: T): T {
   return Object.fromEntries(
     Object.entries(value).map(([name, entry]) => {
       if (name === "allowedEmails") return [name, []];
+      if (name === "allowedEmailExpirations") return [name, {}];
       return [
         name,
         secretNames.has(name)

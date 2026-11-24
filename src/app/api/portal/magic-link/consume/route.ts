@@ -9,6 +9,7 @@ import {
   tokenDigest,
 } from "@/lib/auth";
 import { getSpace } from "@/lib/store";
+import { portalInvitationActive } from "@/lib/portal-invitations";
 
 export const POST = secureRoute(
   async (request) => {
@@ -26,13 +27,13 @@ export const POST = secureRoute(
       !space?.publishedSnapshot ||
       space.accessMode !== "magic_link" ||
       !(space.allowedEmails ?? []).some(
-        (email) => tokenDigest(email.toLowerCase()) === invitation.email_hash,
+        (email) => tokenDigest(email.toLowerCase()) === invitation.email_hash && portalInvitationActive(space, email),
       )
     ) {
       return NextResponse.json(
         {
           error:
-            "Le portail n’est pas encore publié avec cet accès, ou l’invitation a été retirée.",
+            "Le portail n’est pas encore publié avec cet accès, ou l’invitation a été retirée ou a expiré.",
         },
         { status: 409 },
       );

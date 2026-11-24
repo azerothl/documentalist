@@ -5,6 +5,7 @@ import { createPortalMagicToken, tokenDigest } from "@/lib/auth";
 import { emailIsConfigured, sendPortalMagicLink } from "@/lib/email";
 import { rateLimit } from "@/lib/database";
 import { getSpace } from "@/lib/store";
+import { portalInvitationActive } from "@/lib/portal-invitations";
 
 export const POST = secureRoute(
   async (request) => {
@@ -29,7 +30,7 @@ export const POST = secureRoute(
     if (
       space?.publishedSnapshot &&
       space.accessMode === "magic_link" &&
-      (space.allowedEmails ?? []).includes(email)
+      portalInvitationActive(space, email)
     ) {
       const token = createPortalMagicToken(space.id, email);
       try {

@@ -324,12 +324,16 @@ export async function updateSpaceAllowedEmail(
   id: string,
   email: string,
   allowed: boolean,
+  expiresOn?: string | null,
+  requireExisting = false,
 ): Promise<Space | undefined> {
   return enqueue(async (data) => {
     const space = data.spaces.find((candidate) => candidate.id === id);
     if (!space) return undefined;
     migrateStore(data);
     const normalized = email.trim().toLowerCase();
+    if (requireExisting && !space.allowedEmails.includes(normalized))
+      throw new Error("Cette invitation n’existe plus.");
     if (allowed && space.accessMode !== "magic_link")
       throw new Error(
         "Choisissez d’abord le mode « lien magique » dans les réglages de cet espace.",
@@ -345,6 +349,12 @@ export async function updateSpaceAllowedEmail(
     space.allowedEmails = allowed
       ? [...new Set([...space.allowedEmails, normalized])]
       : space.allowedEmails.filter((entry) => entry !== normalized);
+    if (!allowed || expiresOn !== undefined) {
+      const expirations = { ...space.allowedEmailExpirations };
+      if (!allowed || expiresOn === null) delete expirations[normalized];
+      else if (expiresOn !== undefined) expirations[normalized] = expiresOn;
+      space.allowedEmailExpirations = expirations;
+    }
     await persist(data);
     return structuredClone(space);
   });
@@ -1006,6 +1016,7 @@ function removeUserReferences(
     space.allowedEmails = (space.allowedEmails ?? []).filter(
       (allowed) => allowed.trim().toLowerCase() !== email,
     );
+    if (space.allowedEmailExpirations) delete space.allowedEmailExpirations[email];
   }
   data.comments = (data.comments ?? []).filter((comment) => {
     if (comment.authorUserId === user.id) return false;

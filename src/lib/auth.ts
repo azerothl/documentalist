@@ -11,6 +11,7 @@ import { database, audit, dataDirectory } from "./database";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import type { Space } from "./types";
+import { portalInvitationActive } from "./portal-invitations";
 
 export type Role = "admin" | "editor" | "viewer";
 export type SpaceScope = "all" | "selected";
@@ -375,7 +376,7 @@ export function revokePortalMagicAccess(spaceId: string, email: string) {
 }
 
 export async function portalAllowed(
-  space: Pick<Space, "id" | "accessMode" | "accessPassword" | "allowedEmails">,
+  space: Pick<Space, "id" | "accessMode" | "accessPassword" | "allowedEmails" | "allowedEmailExpirations">,
 ) {
   const mode = space.accessMode;
   if (mode === "public") return true;
@@ -391,7 +392,7 @@ export async function portalAllowed(
     return Boolean(
       session &&
       (space.allowedEmails ?? []).some(
-        (email) => tokenDigest(email.toLowerCase()) === session.email_hash,
+        (email) => tokenDigest(email.toLowerCase()) === session.email_hash && portalInvitationActive(space, email),
       ),
     );
   }
