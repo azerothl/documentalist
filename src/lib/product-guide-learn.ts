@@ -212,6 +212,7 @@ export const learnPages: GuidePage[] = [
     [
       "Import and synchronize GitHub",
       "## Before starting",
+      "[Download documentalist-docs (SKILL.md)](https://raw.githubusercontent.com/azerothl/documentalist/main/.agents/skills/documentalist-docs/SKILL.md) and save it as .agents/skills/documentalist-docs/SKILL.md in the target repository. Ask your agent to apply the skill before importing the documentation.",
       "Identify repository owner/name, branch and documentation roots. Private repositories need a read-capable token. Prefer a dedicated space for the exercise. A selected-space editor can import into an assigned existing space, but cannot create a new one.",
       "## Steps",
       "1. Open Outils → Depuis GitHub, or the source panel to link the current space.\n2. Enter the repository and branch. Set Dossier docs for Reference, and optionally Dossier Learn and Dossier Blog. Use distinct roots; nested roots use the most specific match.\n3. Choose format and language. Decide whether to update the current space or create another, according to your permissions.\n4. Provide a token if required. Enable automatic refresh and choose an interval only if needed.\n5. Use Importer le dépôt and review imported, updated, removed and skipped counts. A limit warning means the import may be incomplete.\n6. Inspect the tree and read-only marker. Modify an imported page in GitHub, then use Relancer sync and verify the draft changes.\n7. Publish explicitly when the synchronized draft is ready.",
@@ -221,6 +222,7 @@ export const learnPages: GuidePage[] = [
     [
       "Importer et synchroniser GitHub",
       "## Prérequis",
+      "[Téléchargez documentalist-docs (SKILL.md)](https://raw.githubusercontent.com/azerothl/documentalist/main/.agents/skills/documentalist-docs/SKILL.md) et enregistrez le fichier sous .agents/skills/documentalist-docs/SKILL.md dans le dépôt à documenter. Demandez à votre agent d’appliquer la skill avant l’import.",
       "Identifiez propriétaire/dépôt, branche et racines documentaires. Un dépôt privé demande un jeton autorisé en lecture. Préférez un espace dédié. Un rédacteur limité peut importer dans un espace existant attribué, mais pas en créer un nouveau.",
       "## Étapes",
       "1. Ouvrez Outils → Depuis GitHub, ou le panneau de source pour rattacher l’espace courant.\n2. Saisissez dépôt et branche. Dossier docs alimente Reference ; ajoutez éventuellement Dossier Learn et Dossier Blog. Choisissez des racines distinctes ; les chemins imbriqués utilisent le dossier le plus précis.\n3. Choisissez format et langue. Décidez de mettre à jour l’espace actuel ou d’en créer un autre selon vos droits.\n4. Renseignez le jeton si nécessaire. Activez l’actualisation automatique et son intervalle uniquement si utile.\n5. Cliquez Importer le dépôt et contrôlez les nombres de fichiers importés, actualisés, retirés et ignorés. Un avertissement de limite peut indiquer un import incomplet.\n6. Vérifiez l’arbre et le verrouillage. Modifiez une page importée dans GitHub, puis Relancer sync pour vérifier le brouillon actualisé.\n7. Publiez explicitement quand le résultat est prêt.",
