@@ -144,6 +144,10 @@ Pour les liens magiques : choisir le mode dans Paramètres, enregistrer, utilise
 
 ## Documentation intégrée et parcours Learn
 
+### Skill pour les agents
+
+[Télécharger documentalist-docs (SKILL.md)](https://raw.githubusercontent.com/azerothl/documentalist/main/.agents/skills/documentalist-docs/SKILL.md). Enregistrez le fichier sous `.agents/skills/documentalist-docs/SKILL.md` dans le dépôt à documenter, puis demandez à l’agent d’appliquer la skill. Elle explique comment préparer les dossiers Reference, Learn et Blog, la navigation et le profil d’import GitHub.
+
 L’espace **Product docs** contient une référence et des guides Learn en anglais et en français. La langue du contenu suit le sélecteur du portail ; les libellés de l’espace de rédaction restent ceux de l’interface actuelle. Les pages de référence existantes gardent leurs identifiants et slugs. L’espace de démonstration **API docs** illustre une API fictive et ne documente pas les routes d’administration de Documentalist.
 
 Les chemins suivants sont relatifs à `/p/product-docs/learn/` ; ajouter `?lang=fr` ou `?lang=en` :
